@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import { createDocument } from "../../src/model/create.js";
-import { applyHyperlink, appendParagraph, insertImage, insertTable } from "../../src/model/edit.js";
+import {
+  applyHyperlink,
+  appendParagraph,
+  insertImage,
+  insertTable,
+} from "../../src/model/edit.js";
 import { documentText } from "../../src/model/text.js";
 import type { DocDocument, Paragraph, Table } from "../../src/model/types.js";
 import { importOdt, exportOdt } from "../../src/formats/odt.js";
@@ -39,21 +44,34 @@ function buildDocument(): DocDocument {
     headerRow: true,
   });
   const last = appendParagraph(doc, "");
-  insertImage(doc, { blockId: last.id, inlineIndex: 0, offset: 0 }, {
-    data: Buffer.from(PNG_1X1, "base64"),
-    contentType: "image/png",
-    width: 48,
-    height: 48,
-    alt: "dot",
-    naturalWidthPx: 1,
-    naturalHeightPx: 1,
-  });
+  insertImage(
+    doc,
+    { blockId: last.id, inlineIndex: 0, offset: 0 },
+    {
+      data: Buffer.from(PNG_1X1, "base64"),
+      contentType: "image/png",
+      width: 48,
+      height: 48,
+      alt: "dot",
+      naturalWidthPx: 1,
+      naturalHeightPx: 1,
+    },
+  );
   doc.footnotes.push({
     id: "fn1",
     type: "footnote",
-    blocks: [{ type: "paragraph", id: "pf1", style: "Normal", props: {}, inlines: [{ type: "text", text: "Footnote text.", props: {} }] }],
+    blocks: [
+      {
+        type: "paragraph",
+        id: "pf1",
+        style: "Normal",
+        props: {},
+        inlines: [{ type: "text", text: "Footnote text.", props: {} }],
+      },
+    ],
   });
-  if (body.type === "paragraph") body.inlines.push({ type: "noteRef", noteId: "fn1", noteType: "footnote" });
+  if (body.type === "paragraph")
+    body.inlines.push({ type: "noteRef", noteId: "fn1", noteType: "footnote" });
   return doc;
 }
 
@@ -70,23 +88,41 @@ describe("ODT export", () => {
     const extraLength = buffer.readUInt16LE(28);
     const name = buffer.subarray(30, 30 + nameLength).toString("latin1");
     expect(name).toBe("mimetype");
-    const content = buffer.subarray(30 + nameLength + extraLength, 30 + nameLength + extraLength + MIMETYPE.length).toString("utf8");
+    const content = buffer
+      .subarray(
+        30 + nameLength + extraLength,
+        30 + nameLength + extraLength + MIMETYPE.length,
+      )
+      .toString("utf8");
     expect(content).toBe(MIMETYPE);
 
     const pkg = await readPackage(buffer);
     expect(pkg.isEncrypted).toBe(false);
     expect([...pkg.parts.keys()][0]).toBe("mimetype");
-    for (const part of ["content.xml", "styles.xml", "meta.xml", "META-INF/manifest.xml"]) {
+    for (const part of [
+      "content.xml",
+      "styles.xml",
+      "meta.xml",
+      "META-INF/manifest.xml",
+    ]) {
       expect(pkg.parts.has(part)).toBe(true);
     }
     expect(pkg.parts.get("mimetype")?.toString("utf8")).toBe(MIMETYPE);
-    expect(pkg.parts.get("content.xml")?.toString("utf8")).toContain("office:document-content");
+    expect(pkg.parts.get("content.xml")?.toString("utf8")).toContain(
+      "office:document-content",
+    );
     expect(pkg.parts.get("content.xml")?.toString("utf8")).toContain("<text:h");
-    expect(pkg.parts.get("content.xml")?.toString("utf8")).toContain("<table:table");
+    expect(pkg.parts.get("content.xml")?.toString("utf8")).toContain(
+      "<table:table",
+    );
     expect(pkg.parts.get("content.xml")?.toString("utf8")).toContain("<text:a");
-    expect(pkg.parts.get("content.xml")?.toString("utf8")).toContain("draw:image");
+    expect(pkg.parts.get("content.xml")?.toString("utf8")).toContain(
+      "draw:image",
+    );
     expect(pkg.parts.get("meta.xml")?.toString("utf8")).toContain("ODT sample");
-    expect([...pkg.parts.keys()].some((path) => path.startsWith("Pictures/"))).toBe(true);
+    expect(
+      [...pkg.parts.keys()].some((path) => path.startsWith("Pictures/")),
+    ).toBe(true);
 
     // The archive must be readable by a generic ZIP reader too.
     const zip = await JSZip.loadAsync(buffer);
@@ -98,7 +134,9 @@ describe("ODT import", () => {
   it("round-trips text, headings, tables, hyperlinks, images and footnotes", async () => {
     const doc = buildDocument();
     const exported = await exportOdt(doc, { preserveTimestamps: true });
-    const imported = await importOdt(exported.buffer, { fileName: "sample.odt" });
+    const imported = await importOdt(exported.buffer, {
+      fileName: "sample.odt",
+    });
     const round = imported.document;
 
     expect(round.metadata.title).toBe("ODT sample");
@@ -112,7 +150,9 @@ describe("ODT import", () => {
       expect(documentText(round)).toContain("ODT heading");
     }
 
-    const table = round.sections[0].blocks.find((block): block is Table => block.type === "table");
+    const table = round.sections[0].blocks.find(
+      (block): block is Table => block.type === "table",
+    );
     expect(table).toBeDefined();
     expect(table?.rows.length).toBe(2);
     expect(table?.rows[0].cells.length).toBe(2);
@@ -122,14 +162,20 @@ describe("ODT import", () => {
 
     const link = round.sections[0].blocks
       .flatMap((block) => (block.type === "paragraph" ? block.inlines : []))
-      .find((inline) => inline.type === "text" && inline.props.hyperlink?.href === "https://example.com/odt");
+      .find(
+        (inline) =>
+          inline.type === "text" &&
+          inline.props.hyperlink?.href === "https://example.com/odt",
+      );
     expect(link).toBeDefined();
 
     expect(round.media.length).toBe(1);
     expect(round.media[0].contentType).toBe("image/png");
     expect(round.footnotes.length).toBe(1);
     expect(documentText(round)).toContain("Footnote text.");
-    expect(imported.losses.some((loss) => loss.level === "unsupported")).toBe(false);
+    expect(imported.losses.some((loss) => loss.level === "unsupported")).toBe(
+      false,
+    );
   });
 
   it("imports an externally produced minimal ODT", async () => {
@@ -158,14 +204,21 @@ describe("ODT import", () => {
       expect(h2.style).toBe("Heading2");
     }
     const listItems = result.document.sections[0].blocks.filter(
-      (block): block is Paragraph => block.type === "paragraph" && Boolean(block.props.numbering),
+      (block): block is Paragraph =>
+        block.type === "paragraph" && Boolean(block.props.numbering),
     );
     expect(listItems.length).toBe(2);
-    const table = result.document.sections[0].blocks.find((block): block is Table => block.type === "table");
+    const table = result.document.sections[0].blocks.find(
+      (block): block is Table => block.type === "table",
+    );
     expect(table?.rows[0].cells.length).toBe(2);
     const link = result.document.sections[0].blocks
       .flatMap((block) => (block.type === "paragraph" ? block.inlines : []))
-      .find((inline) => inline.type === "text" && inline.props.hyperlink?.href === "https://example.org");
+      .find(
+        (inline) =>
+          inline.type === "text" &&
+          inline.props.hyperlink?.href === "https://example.org",
+      );
     expect(link).toBeDefined();
     expect(result.document.compatibility?.sourceFormat).toBe("odt");
   });
@@ -174,7 +227,9 @@ describe("ODT import", () => {
     const zip = new JSZip();
     zip.file("mimetype", MIMETYPE, { compression: "STORE" });
     const buffer = await zip.generateAsync({ type: "nodebuffer" });
-    await expect(importOdt(buffer, { fileName: "broken.odt" })).rejects.toMatchObject({
+    await expect(
+      importOdt(buffer, { fileName: "broken.odt" }),
+    ).rejects.toMatchObject({
       code: "FORMAT_INVALID_INPUT",
     });
   });

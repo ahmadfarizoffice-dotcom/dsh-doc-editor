@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OpenDocument Text (ODT) adapter.
  *
  * Import reads the package with `readPackage` and maps `content.xml` onto the
@@ -889,7 +889,8 @@ class OdtReader {
   ): Inline[] {
     const out: Inline[] = [];
     this.walkInline(node, base, out, state);
-    trimInlines(out);
+    // ODF text content is significant (spaces inside table cells and between
+    // spans are authored), so no boundary trimming is applied here.
     return out;
   }
 
@@ -1136,19 +1137,6 @@ class OdtReader {
   }
 }
 
-function trimInlines(inlines: Inline[]): void {
-  const first = inlines[0];
-  if (first && first.type === "text") {
-    first.text = first.text.replace(/^\s+/, "");
-    if (first.text.length === 0) inlines.shift();
-  }
-  const last = inlines[inlines.length - 1];
-  if (last && last.type === "text") {
-    last.text = last.text.replace(/\s+$/, "");
-    if (last.text.length === 0) inlines.pop();
-  }
-}
-
 /**
  * Imports an OpenDocument Text package.
  */
@@ -1366,6 +1354,7 @@ class OdtWriter {
   private readonly listStyles = new Map<"bullet" | "number", string>();
   private tableIndex = 0;
   private readonly noteNumbers = new Map<string, number>();
+  private readonly pageBreakBlocks = new Set<string>();
 
   constructor(private readonly doc: DocDocument) {
     [...doc.footnotes].forEach((note, index) =>
@@ -1514,21 +1503,33 @@ class OdtWriter {
     const parts: string[] = [];
     sections.forEach((section, sectionIndex) => {
       if (sectionIndex > 0) {
-        if (section.breakBefore === "continuous") {
-          parts.push('<text:p text:style-name="Standard"/>');
-        } else {
-          parts.push("<text:p><text:soft-page-break/></text:p>");
-        }
-        if (
-          section.breakBefore === "oddPage" ||
-          section.breakBefore === "evenPage"
-        ) {
-          this.losses.partial(
-            `sectionBreak.${section.breakBefore}`,
-            "ODF cannot express odd/even page section breaks; a plain page break is used",
-            `section[${sectionIndex}]`,
-            false,
+        if (section.breakBefore !== "continuous") {
+          // ODF has no document-level section break: apply `fo:break-before`
+          // to the first paragraph instead of inserting a synthetic paragraph,
+          // which would add an empty line to the text projection.
+          const firstParagraph = section.blocks.find(
+            (block): block is Paragraph => block.type === "paragraph",
           );
+          if (firstParagraph) this.pageBreakBlocks.add(firstParagraph.id);
+          else {
+            this.losses.partial(
+              "sectionBreak",
+              "A section starting with a table cannot carry a page break style; the break was dropped",
+              `section[${sectionIndex}]`,
+              false,
+            );
+          }
+          if (
+            section.breakBefore === "oddPage" ||
+            section.breakBefore === "evenPage"
+          ) {
+            this.losses.partial(
+              `sectionBreak.${section.breakBefore}`,
+              "ODF cannot express odd/even page section breaks; a plain page break is used",
+              `section[${sectionIndex}]`,
+              false,
+            );
+          }
         }
       }
       parts.push(this.blocks(section.blocks, section));
@@ -1575,15 +1576,30 @@ class OdtWriter {
         index = rendered.next;
         continue;
       }
-      out.push(this.paragraph(block, section));
+      out.push(
+        this.paragraph(
+          block,
+          section,
+          this.pageBreakBlocks.has(block.id)
+            ? { pageBreakBefore: true }
+            : undefined,
+        ),
+      );
       index += 1;
     }
     return out.join("\n");
   }
 
-  private paragraph(paragraph: Paragraph, _section: Section): string {
+  private paragraph(
+    paragraph: Paragraph,
+    _section: Section,
+    extraProps?: ParagraphProps,
+  ): string {
     const styleName = this.namedStyleFor(paragraph.style);
-    const directProps: ParagraphProps = { ...paragraph.props };
+    const directProps: ParagraphProps = {
+      ...paragraph.props,
+      ...(extraProps ?? {}),
+    };
     const directStyle = this.ensureParagraphStyle(directProps, styleName);
     const styleAttribute = directStyle ?? styleName;
     const attributes: Record<string, string> = {};
@@ -2312,5 +2328,3 @@ export const odtAdapter: FormatAdapter = {
   import: importOdt,
   export: exportOdt,
 };
-
-/* Unused imports kept explicit for readability of the public surface. */

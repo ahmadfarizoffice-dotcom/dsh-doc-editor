@@ -55,7 +55,13 @@ function writeHeader(
 function writeDirectoryEntry(
   directory: Buffer,
   index: number,
-  entry: { name: string; type: number; child: number; startSector: number; size: number },
+  entry: {
+    name: string;
+    type: number;
+    child: number;
+    startSector: number;
+    size: number;
+  },
 ): void {
   const offset = index * 128;
   const name = Buffer.from(`${entry.name}\0`, "utf16le");
@@ -72,7 +78,9 @@ function writeDirectoryEntry(
 }
 
 /** Builds a compound file whose streams all live in regular FAT sectors. */
-export function buildCompoundFile(streams: Array<{ name: string; data: Buffer }>): Buffer {
+export function buildCompoundFile(
+  streams: Array<{ name: string; data: Buffer }>,
+): Buffer {
   const placements: Array<{ start: number; count: number }> = [];
   let nextSector = 2; // 0 = FAT, 1 = directory
   for (const stream of streams) {
@@ -90,19 +98,29 @@ export function buildCompoundFile(streams: Array<{ name: string; data: Buffer }>
   });
 
   const fat = Buffer.alloc(SECTOR, 0xff);
-  const setFat = (sector: number, value: number) => fat.writeUInt32LE(value, sector * 4);
+  const setFat = (sector: number, value: number) =>
+    fat.writeUInt32LE(value, sector * 4);
   setFat(0, 0xfffffffd); // FATSECT
   setFat(1, END_OF_CHAIN); // directory chain end
   placements.forEach((placement) => {
     for (let index = 0; index < placement.count; index += 1) {
       const last = index === placement.count - 1;
-      setFat(placement.start + index, last ? END_OF_CHAIN : placement.start + index + 1);
+      setFat(
+        placement.start + index,
+        last ? END_OF_CHAIN : placement.start + index + 1,
+      );
     }
   });
   fat.copy(file, SECTOR * 1);
 
   const directory = Buffer.alloc(SECTOR);
-  writeDirectoryEntry(directory, 0, { name: "Root Entry", type: 5, child: 1, startSector: END_OF_CHAIN, size: 0 });
+  writeDirectoryEntry(directory, 0, {
+    name: "Root Entry",
+    type: 5,
+    child: 1,
+    startSector: END_OF_CHAIN,
+    size: 0,
+  });
   streams.forEach((stream, index) => {
     writeDirectoryEntry(directory, index + 1, {
       name: stream.name,
@@ -122,7 +140,8 @@ export function buildCompoundFile(streams: Array<{ name: string; data: Buffer }>
 
 /** Builds a compound file whose single small stream lives in the mini stream. */
 export function buildMiniCompoundFile(name: string, data: Buffer): Buffer {
-  if (data.length >= 4096) throw new Error("mini stream fixture must be smaller than 4096 bytes");
+  if (data.length >= 4096)
+    throw new Error("mini stream fixture must be smaller than 4096 bytes");
   // 0 = FAT, 1 = directory, 2 = mini FAT, 3 = mini stream.
   const file = Buffer.alloc(5 * SECTOR);
   writeHeader(file, {
@@ -142,7 +161,10 @@ export function buildMiniCompoundFile(name: string, data: Buffer): Buffer {
   const miniFat = Buffer.alloc(SECTOR, 0xff);
   const miniSectors = Math.max(1, Math.ceil(data.length / MINI_SECTOR));
   for (let index = 0; index < miniSectors; index += 1) {
-    miniFat.writeUInt32LE(index === miniSectors - 1 ? END_OF_CHAIN : index + 1, index * 4);
+    miniFat.writeUInt32LE(
+      index === miniSectors - 1 ? END_OF_CHAIN : index + 1,
+      index * 4,
+    );
   }
   miniFat.copy(file, SECTOR * 3);
 
@@ -226,13 +248,16 @@ export function buildWordDocumentStream(): Buffer {
 
 /** A complete minimal .doc compound file using the regular FAT path. */
 export function buildLegacyDocFile(): Buffer {
-  return buildCompoundFile([{ name: "WordDocument", data: buildWordDocumentStream() }]);
+  return buildCompoundFile([
+    { name: "WordDocument", data: buildWordDocumentStream() },
+  ]);
 }
 
 /* --------------------------------------------------------------- XLSX */
 
 const XLSX_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
-const R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const R_NS =
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships";
 
 /** Minimal two-sheet workbook with shared strings, a formula and a column width. */
@@ -273,7 +298,13 @@ export async function buildXlsxPackage(): Promise<Buffer> {
 const P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main";
 const A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main";
 
-function slideXml(options: { title: string; points: string[]; table: boolean; picture: boolean; chart: boolean }): string {
+function slideXml(options: {
+  title: string;
+  points: string[];
+  table: boolean;
+  picture: boolean;
+  chart: boolean;
+}): string {
   const points = options.points
     .map((point) => `<a:p><a:r><a:t>${point}</a:t></a:r></a:p>`)
     .join("");
@@ -306,13 +337,28 @@ export async function buildPptxPackage(): Promise<Buffer> {
   );
   zip.file(
     "ppt/slides/slide1.xml",
-    slideXml({ title: "Slide title", points: ["Point one", "Point two"], table: true, picture: true, chart: true }),
+    slideXml({
+      title: "Slide title",
+      points: ["Point one", "Point two"],
+      table: true,
+      picture: true,
+      chart: true,
+    }),
   );
   zip.file(
     "ppt/slides/_rels/slide1.xml.rels",
     `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="${REL_NS}"><Relationship Id="rId2" Type="${R_NS}/image" Target="../media/image1.png"/></Relationships>`,
   );
-  zip.file("ppt/slides/slide2.xml", slideXml({ title: "Second slide", points: ["Only point"], table: false, picture: false, chart: false }));
+  zip.file(
+    "ppt/slides/slide2.xml",
+    slideXml({
+      title: "Second slide",
+      points: ["Only point"],
+      table: false,
+      picture: false,
+      chart: false,
+    }),
+  );
   zip.file("ppt/media/image1.png", PNG_1X1);
   return zip.generateAsync({ type: "nodebuffer" });
 }

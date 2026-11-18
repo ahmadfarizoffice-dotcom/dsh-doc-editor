@@ -20,8 +20,12 @@ describe("XLSX preview import", () => {
     expect(doc.metadata.custom.DSHPreview).toBe("true");
     expect(doc.compatibility).toBeDefined();
     expect(doc.compatibility?.sourceFormat).toBe("xlsx-preview");
-    expect(result.losses.some((loss) => loss.feature === "xlsx.formula")).toBe(true);
-    expect(result.losses.some((loss) => loss.feature === "xlsx.chart")).toBe(true);
+    expect(result.losses.some((loss) => loss.feature === "xlsx.formula")).toBe(
+      true,
+    );
+    expect(result.losses.some((loss) => loss.feature === "xlsx.chart")).toBe(
+      true,
+    );
 
     const firstSection = doc.sections[0];
     const heading = firstSection.blocks[0];
@@ -30,7 +34,9 @@ describe("XLSX preview import", () => {
       expect(heading.style).toBe("Heading1");
       expect(documentText(doc)).toContain("Sheet: Data");
     }
-    const table = firstSection.blocks.find((block): block is Table => block.type === "table");
+    const table = firstSection.blocks.find(
+      (block): block is Table => block.type === "table",
+    );
     expect(table).toBeDefined();
     expect(table?.rows.length).toBe(2);
     expect(table?.rows[0].props.isHeader).toBe(true);
@@ -41,10 +47,14 @@ describe("XLSX preview import", () => {
     expect(Math.round(table?.grid[0] ?? 0)).toBe(70);
 
     const second = doc.sections[1];
-    expect(documentText({ ...doc, sections: [second] })).toContain("Sheet: Second");
+    expect(documentText({ ...doc, sections: [second] })).toContain(
+      "Sheet: Second",
+    );
     expect(
       second.blocks.some(
-        (block) => block.type === "table" && documentText({ ...doc, sections: [second] }).includes("Gamma"),
+        (block) =>
+          block.type === "table" &&
+          documentText({ ...doc, sections: [second] }).includes("Gamma"),
       ),
     ).toBe(true);
   });
@@ -54,7 +64,9 @@ describe("XLSX preview import", () => {
     expect(xlsxPreviewAdapter.detect(bytes, "book.xlsx")).toBe(true);
     expect(xlsxPreviewAdapter.readOnly).toBe(true);
     const imported = await importXlsxPreview(bytes, { fileName: "book.xlsx" });
-    await expect(exportAny(imported.document, "xlsx-preview")).rejects.toMatchObject({
+    await expect(
+      exportAny(imported.document, "xlsx-preview"),
+    ).rejects.toMatchObject({
       code: "FORMAT_EXPORT_UNSUPPORTED",
     });
   });
@@ -69,8 +81,12 @@ describe("PPTX preview import", () => {
     expect(doc.sections.length).toBe(2);
     expect(doc.metadata.custom.DSHPreview).toBe("true");
     expect(doc.compatibility?.sourceFormat).toBe("pptx-preview");
-    expect(result.losses.some((loss) => loss.feature === "pptx.chart")).toBe(true);
-    expect(result.losses.some((loss) => loss.feature === "pptx.notes")).toBe(true);
+    expect(result.losses.some((loss) => loss.feature === "pptx.chart")).toBe(
+      true,
+    );
+    expect(result.losses.some((loss) => loss.feature === "pptx.notes")).toBe(
+      true,
+    );
     // Slide dimensions: 12192000 x 6858000 EMU → 960 x 540 pt.
     expect(Math.round(doc.sections[0].page.width)).toBe(960);
     expect(Math.round(doc.sections[0].page.height)).toBe(540);
@@ -90,10 +106,13 @@ describe("PPTX preview import", () => {
       expect(heading.style).toBe("Heading1");
     }
     const slideTitle = firstSection.blocks.find(
-      (block): block is Paragraph => block.type === "paragraph" && block.style === "Title",
+      (block): block is Paragraph =>
+        block.type === "paragraph" && block.style === "Title",
     );
     expect(slideTitle).toBeDefined();
-    const table = firstSection.blocks.find((block): block is Table => block.type === "table");
+    const table = firstSection.blocks.find(
+      (block): block is Table => block.type === "table",
+    );
     expect(table).toBeDefined();
     expect(table?.rows.length).toBe(2);
     expect(documentText(doc)).toContain("H1");

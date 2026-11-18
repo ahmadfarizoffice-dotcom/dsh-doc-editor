@@ -827,9 +827,18 @@ class RtfReader {
         }
         // Font family/character set descriptors are not part of the name.
         if (
-          ["froman", "fswiss", "fmodern", "fscript", "fdecor", "fnil", "fcharset", "fprq", "fbias", "cpg"].includes(
-            token.word,
-          )
+          [
+            "froman",
+            "fswiss",
+            "fmodern",
+            "fscript",
+            "fdecor",
+            "fnil",
+            "fcharset",
+            "fprq",
+            "fbias",
+            "cpg",
+          ].includes(token.word)
         ) {
           continue;
         }
@@ -857,9 +866,12 @@ class RtfReader {
         continue;
       }
       if (token.kind === "control") {
-        if (token.word === "red" && token.param !== undefined) red = token.param;
-        else if (token.word === "green" && token.param !== undefined) green = token.param;
-        else if (token.word === "blue" && token.param !== undefined) blue = token.param;
+        if (token.word === "red" && token.param !== undefined)
+          red = token.param;
+        else if (token.word === "green" && token.param !== undefined)
+          green = token.param;
+        else if (token.word === "blue" && token.param !== undefined)
+          blue = token.param;
         continue;
       }
       if (token.kind === "text" && token.text.includes(";")) {
@@ -949,7 +961,11 @@ class RtfReader {
         buffer += token.text;
         continue;
       }
-      if (token.kind === "control" && token.word === "s" && token.param !== undefined) {
+      if (
+        token.kind === "control" &&
+        token.word === "s" &&
+        token.param !== undefined
+      ) {
         commit();
         styleIndex = token.param;
         continue;

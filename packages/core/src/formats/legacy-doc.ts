@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Legacy Word 97-2003 binary (.doc) importer.
  *
  * This is a real (if deliberately narrow) implementation of the on-disk format:
@@ -630,7 +630,9 @@ function splitParagraphs(text: string): WordSegments {
       continue;
     }
     if (char === "\f") {
-      segments.push({ text: current, pageBreakAfter: true });
+      const previous = segments[segments.length - 1];
+      if (current.length === 0 && previous) previous.pageBreakAfter = true;
+      else segments.push({ text: current, pageBreakAfter: true });
       current = "";
       pageBreaks += 1;
       continue;

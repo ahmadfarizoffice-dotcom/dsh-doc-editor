@@ -1,6 +1,11 @@
 ﻿import { describe, expect, it } from "vitest";
 import { documentText } from "../../src/model/text.js";
-import type { Block, DocDocument, Paragraph, Table } from "../../src/model/types.js";
+import type {
+  Block,
+  DocDocument,
+  Paragraph,
+  Table,
+} from "../../src/model/types.js";
 import { exportRtf, importRtf } from "../../src/formats/rtf.js";
 
 const SAMPLE_RTF = String.raw`{\rtf1\ansi\ansicpg1252\deff0\uc1
@@ -23,12 +28,16 @@ function blocks(doc: DocDocument): Block[] {
 }
 
 function paragraphs(doc: DocDocument): Paragraph[] {
-  return blocks(doc).filter((block): block is Paragraph => block.type === "paragraph");
+  return blocks(doc).filter(
+    (block): block is Paragraph => block.type === "paragraph",
+  );
 }
 
 describe("RTF import", () => {
   it("parses groups, formatting, alignment, indents, colours, unicode and links", async () => {
-    const result = await importRtf(Buffer.from(SAMPLE_RTF, "latin1"), { fileName: "sample.rtf" });
+    const result = await importRtf(Buffer.from(SAMPLE_RTF, "latin1"), {
+      fileName: "sample.rtf",
+    });
     const doc = result.document;
     expect(doc.metadata.title).toBe("RTF sample");
     expect(doc.metadata.creator).toBe("Grace Hopper");
@@ -37,16 +46,34 @@ describe("RTF import", () => {
     const title = paragraphs(doc)[0];
     expect(title.props.alignment).toBe("center");
     expect(documentText(doc)).toContain("Bold title");
-    const boldRun = title.inlines.find((inline) => inline.type === "text" && inline.text.includes("Bold title"));
-    expect(boldRun && boldRun.type === "text" ? boldRun.props.bold : undefined).toBe(true);
+    const boldRun = title.inlines.find(
+      (inline) => inline.type === "text" && inline.text.includes("Bold title"),
+    );
+    expect(
+      boldRun && boldRun.type === "text" ? boldRun.props.bold : undefined,
+    ).toBe(true);
 
     const normal = paragraphs(doc)[1];
-    const italic = normal.inlines.find((inline) => inline.type === "text" && inline.text === "italic");
-    expect(italic && italic.type === "text" ? italic.props.italic : undefined).toBe(true);
-    const underlined = normal.inlines.find((inline) => inline.type === "text" && inline.text === "underlined");
-    expect(underlined && underlined.type === "text" ? underlined.props.underline : undefined).toBe("single");
-    const struck = normal.inlines.find((inline) => inline.type === "text" && inline.text === "struck");
-    expect(struck && struck.type === "text" ? struck.props.strike : undefined).toBe(true);
+    const italic = normal.inlines.find(
+      (inline) => inline.type === "text" && inline.text === "italic",
+    );
+    expect(
+      italic && italic.type === "text" ? italic.props.italic : undefined,
+    ).toBe(true);
+    const underlined = normal.inlines.find(
+      (inline) => inline.type === "text" && inline.text === "underlined",
+    );
+    expect(
+      underlined && underlined.type === "text"
+        ? underlined.props.underline
+        : undefined,
+    ).toBe("single");
+    const struck = normal.inlines.find(
+      (inline) => inline.type === "text" && inline.text === "struck",
+    );
+    expect(
+      struck && struck.type === "text" ? struck.props.strike : undefined,
+    ).toBe(true);
 
     const right = paragraphs(doc)[2];
     expect(right.props.alignment).toBe("right");
@@ -56,7 +83,9 @@ describe("RTF import", () => {
     expect(Math.round(indented.props.indent?.hanging ?? 0)).toBe(18);
 
     const coloured = paragraphs(doc)[4];
-    const colouredRun = coloured.inlines.find((inline) => inline.type === "text" && inline.text.includes("Red Arial"));
+    const colouredRun = coloured.inlines.find(
+      (inline) => inline.type === "text" && inline.text.includes("Red Arial"),
+    );
     if (colouredRun && colouredRun.type === "text") {
       expect(colouredRun.props.color).toBe("#ff0000");
       expect(colouredRun.props.fontFamily).toBe("Arial");
@@ -71,23 +100,30 @@ describe("RTF import", () => {
 
     const linkRun = paragraphs(doc)
       .flatMap((paragraph) => paragraph.inlines)
-      .find((inline) => inline.type === "text" && inline.props.hyperlink?.href === "https://example.com/rtf");
+      .find(
+        (inline) =>
+          inline.type === "text" &&
+          inline.props.hyperlink?.href === "https://example.com/rtf",
+      );
     expect(linkRun).toBeDefined();
     expect(documentText(doc)).toContain("click here");
 
-    const table = blocks(doc).find((block): block is Table => block.type === "table");
+    const table = blocks(doc).find(
+      (block): block is Table => block.type === "table",
+    );
     expect(table).toBeDefined();
     expect(table?.rows[0].cells).toHaveLength(2);
     expect(table?.grid[0]).toBeGreaterThan(0);
     expect(documentText(doc)).toContain("Cell A");
     expect(documentText(doc)).toContain("Cell B");
 
-    expect(result.losses.some((loss) => loss.feature.startsWith("rtf."))).toBe(false);
+    expect(result.losses.some((loss) => loss.feature.startsWith("rtf."))).toBe(
+      false,
+    );
   });
 
   it("skips unknown destinations and reports them as losses without throwing", async () => {
-    const rtf =
-      String.raw`{\rtf1\ansi{\*\generator Test;}{\pict\pngblip 89504e47}{\header header text}\pard Hello\par}`;
+    const rtf = String.raw`{\rtf1\ansi{\*\generator Test;}{\pict\pngblip 89504e47}{\header header text}\pard Hello\par}`;
     const result = await importRtf(Buffer.from(rtf, "latin1"));
     expect(documentText(result.document)).toContain("Hello");
     const features = result.losses.map((loss) => loss.feature);
@@ -99,7 +135,9 @@ describe("RTF import", () => {
 
 describe("RTF export", () => {
   it("round-trips text, formatting and tables through the importer", async () => {
-    const imported = await importRtf(Buffer.from(SAMPLE_RTF, "latin1"), { fileName: "sample.rtf" });
+    const imported = await importRtf(Buffer.from(SAMPLE_RTF, "latin1"), {
+      fileName: "sample.rtf",
+    });
     const exported = await exportRtf(imported.document);
     const rtf = exported.buffer.toString("latin1");
     expect(rtf.startsWith("{\\rtf1")).toBe(true);
@@ -108,15 +146,23 @@ describe("RTF export", () => {
     expect(rtf).toContain("\\trowd");
     expect(rtf).toContain("\\cellx");
 
-    const round = await importRtf(exported.buffer, { fileName: "roundtrip.rtf" });
-    expect(documentText(round.document).trim()).toBe(documentText(imported.document).trim());
-    const roundTable = blocks(round.document).find((block): block is Table => block.type === "table");
+    const round = await importRtf(exported.buffer, {
+      fileName: "roundtrip.rtf",
+    });
+    expect(documentText(round.document).trim()).toBe(
+      documentText(imported.document).trim(),
+    );
+    const roundTable = blocks(round.document).find(
+      (block): block is Table => block.type === "table",
+    );
     expect(roundTable?.rows.length).toBe(1);
     expect(roundTable?.rows[0].cells).toHaveLength(2);
   });
 
   it("reports images and revisions as unsupported", async () => {
-    const imported = await importRtf(Buffer.from(String.raw`{\rtf1\ansi Hello\par}`, "latin1"));
+    const imported = await importRtf(
+      Buffer.from(String.raw`{\rtf1\ansi Hello\par}`, "latin1"),
+    );
     const paragraph = paragraphs(imported.document)[0];
     paragraph.inlines = [
       {
@@ -132,7 +178,13 @@ describe("RTF export", () => {
       data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
       byteLength: 70,
     });
-    paragraph.inlines.push({ type: "image", mediaId: "img1", width: 10, height: 10, alt: "dot" });
+    paragraph.inlines.push({
+      type: "image",
+      mediaId: "img1",
+      width: 10,
+      height: 10,
+      alt: "dot",
+    });
     const exported = await exportRtf(imported.document);
     const features = exported.losses.map((loss) => loss.feature);
     expect(features).toContain("image");

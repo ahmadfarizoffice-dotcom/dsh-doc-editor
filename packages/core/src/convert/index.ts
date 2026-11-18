@@ -423,8 +423,19 @@ interface PdfRendererOptions {
 type PdfRenderer = (doc: DocDocument, options: PdfRendererOptions) => unknown;
 
 interface RenderModule {
-  renderPdf?: PdfRenderer;
-  default?: unknown;
+  /** Document-level convenience API: layout + render in one call. */
+  renderDocumentPdf?: (
+    doc: DocDocument,
+    options: Record<string, unknown>,
+  ) => unknown;
+  renderPdf?: (layout: unknown, options: Record<string, unknown>) => unknown;
+}
+
+interface LayoutModule {
+  layoutDocument?: (
+    doc: DocDocument,
+    options?: Record<string, unknown>,
+  ) => unknown;
 }
 
 function describeError(error: unknown): string {
@@ -435,8 +446,8 @@ async function renderPdfThroughModule(
   doc: DocDocument,
   options: PdfRendererOptions,
 ): Promise<Buffer> {
-  // Deliberately a variable specifier: the render module is owned by another
-  // package area and may not exist yet, so a literal specifier would fail the
+  // Deliberately variable specifiers: the render module is owned by another
+  // package area and may not exist yet, so literal specifiers would fail the
   // TypeScript build instead of producing the runtime PDF_RENDERER_UNAVAILABLE
   // error the API contract promises.
   const renderModuleSpecifier: string = "../render/index.js";
@@ -449,22 +460,55 @@ async function renderPdfThroughModule(
       `PDF export requires the render module (${renderModuleSpecifier}), which is not available: ${describeError(error)}`,
     );
   }
-  const renderer = module.renderPdf;
-  if (typeof renderer !== "function") {
+
+  const renderOptions: Record<string, unknown> = {
+    pageNumbers: options.pageNumbers,
+  };
+
+  let output: unknown;
+  if (typeof module.renderDocumentPdf === "function") {
+    try {
+      output = await module.renderDocumentPdf(doc, renderOptions);
+    } catch (error) {
+      throw new ConversionError(
+        "PDF_RENDERER_FAILED",
+        `renderDocumentPdf() failed: ${describeError(error)}`,
+      );
+    }
+  } else if (typeof module.renderPdf === "function") {
+    // Lower-level API: it renders a layout result, so the layout must be
+    // computed first with the same engine the preview uses.
+    const layoutModuleSpecifier: string = "../layout/index.js";
+    let layout: unknown;
+    try {
+      const layoutModule = (await import(
+        layoutModuleSpecifier
+      )) as LayoutModule;
+      if (typeof layoutModule.layoutDocument !== "function") {
+        throw new Error("layoutDocument() is not exported");
+      }
+      layout = layoutModule.layoutDocument(doc);
+    } catch (error) {
+      throw new ConversionError(
+        "PDF_RENDERER_UNAVAILABLE",
+        `PDF export needs the layout module (${layoutModuleSpecifier}) when only renderPdf() is exported: ${describeError(error)}`,
+      );
+    }
+    try {
+      output = await module.renderPdf(layout, renderOptions);
+    } catch (error) {
+      throw new ConversionError(
+        "PDF_RENDERER_FAILED",
+        `renderPdf() failed: ${describeError(error)}`,
+      );
+    }
+  } else {
     throw new ConversionError(
       "PDF_RENDERER_UNAVAILABLE",
-      `The render module (${renderModuleSpecifier}) does not export renderPdf()`,
+      `The render module (${renderModuleSpecifier}) exports neither renderDocumentPdf() nor renderPdf()`,
     );
   }
-  let output: unknown;
-  try {
-    output = await renderer(doc, options);
-  } catch (error) {
-    throw new ConversionError(
-      "PDF_RENDERER_FAILED",
-      `renderPdf() failed: ${describeError(error)}`,
-    );
-  }
+
   if (Buffer.isBuffer(output)) return output;
   if (output instanceof Uint8Array) return Buffer.from(output);
   if (output && typeof output === "object") {
@@ -477,10 +521,9 @@ async function renderPdfThroughModule(
   }
   throw new ConversionError(
     "PDF_RENDERER_FAILED",
-    "renderPdf() returned no PDF bytes",
+    "The PDF renderer returned no PDF bytes",
   );
 }
-
 /* ---------------------------------------------------------------- convert */
 
 /**

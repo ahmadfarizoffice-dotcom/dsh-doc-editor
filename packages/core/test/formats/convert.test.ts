@@ -14,14 +14,19 @@ import {
 } from "../../src/convert/index.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const fixture = path.resolve(here, "../../../../fixtures/docx_docs_renderer_feature_test_cases.docx");
+const fixture = path.resolve(
+  here,
+  "../../../../fixtures/docx_docs_renderer_feature_test_cases.docx",
+);
 
 let cached: DocDocument | undefined;
 
 async function fixtureDocument(): Promise<DocDocument> {
   if (!cached) {
     const bytes = await readFile(fixture);
-    const imported = await importDocx(bytes, { fileName: "feature-test-cases.docx" });
+    const imported = await importDocx(bytes, {
+      fileName: "feature-test-cases.docx",
+    });
     cached = imported.document;
   }
   return cached;
@@ -44,14 +49,20 @@ describe("conversion capability matrix", () => {
       ["legacy-doc", "docx"],
     ];
     for (const [from, to] of required) {
-      const entry = matrix.find((candidate) => candidate.from === from && candidate.to === to);
+      const entry = matrix.find(
+        (candidate) => candidate.from === from && candidate.to === to,
+      );
       expect(entry, `${from} -> ${to} must be supported`).toBeDefined();
       expect(entry?.available).toBe(true);
       expect(entry?.fidelity).toMatch(/^(exact|high|medium|low)$/);
     }
     expect(getConversionCapabilities("docx", "html")?.fidelity).toBe("high");
-    expect(getConversionCapabilities("docx", "pdf")?.requiresRenderer).toBe(true);
-    expect(getConversionCapabilities("docx", "markdown")?.lossyFeatures.length).toBeGreaterThan(0);
+    expect(getConversionCapabilities("docx", "pdf")?.requiresRenderer).toBe(
+      true,
+    );
+    expect(
+      getConversionCapabilities("docx", "markdown")?.lossyFeatures.length,
+    ).toBeGreaterThan(0);
     expect(getConversionCapabilities("docx", "xlsx-preview")).toBeUndefined();
     expect(supportedTargets("docx").map((entry) => entry.to)).toContain("odt");
   });
@@ -113,7 +124,11 @@ describe("convert() from bytes", () => {
       "<html><body><h1>Converted heading</h1><p>Body text with <strong>bold</strong>.</p></body></html>",
       "utf8",
     );
-    const result = await convert(html, { from: "auto", to: "docx", fileName: "input.html" });
+    const result = await convert(html, {
+      from: "auto",
+      to: "docx",
+      fileName: "input.html",
+    });
     expect(result.buffer.subarray(0, 2).toString("latin1")).toBe("PK");
     expect(result.from).toBe("html");
     expect(result.report.verified).toBe(true);
@@ -127,7 +142,11 @@ describe("convert() from bytes", () => {
       String.raw`{\rtf1\ansi{\header header text}{\pict\pngblip 89504e47}\pard Lossy sample\par}`,
       "latin1",
     );
-    const result = await convert(rtf, { from: "auto", to: "docx", fileName: "lossy.rtf" });
+    const result = await convert(rtf, {
+      from: "auto",
+      to: "docx",
+      fileName: "lossy.rtf",
+    });
     expect(result.from).toBe("rtf");
     const features = result.losses.map((loss) => loss.feature);
     expect(features).toContain("rtf.header");
@@ -137,13 +156,25 @@ describe("convert() from bytes", () => {
   });
 
   it("fails with typed errors for unknown input and read-only targets", async () => {
-    await expect(convert(Buffer.from([0x00, 0x01, 0x02, 0x03, 0xff]), { from: "auto", to: "docx" })).rejects.toMatchObject({
+    await expect(
+      convert(Buffer.from([0x00, 0x01, 0x02, 0x03, 0xff]), {
+        from: "auto",
+        to: "docx",
+      }),
+    ).rejects.toMatchObject({
       code: "FORMAT_UNKNOWN",
     });
-    await expect(convert(Buffer.from("# title\n", "utf8"), { from: "markdown", to: "xlsx-preview" })).rejects.toMatchObject({
+    await expect(
+      convert(Buffer.from("# title\n", "utf8"), {
+        from: "markdown",
+        to: "xlsx-preview",
+      }),
+    ).rejects.toMatchObject({
       code: "FORMAT_EXPORT_UNSUPPORTED",
     });
-    await expect(convert(Buffer.from("# title\n", "utf8"), { from: "nope", to: "docx" })).rejects.toMatchObject({
+    await expect(
+      convert(Buffer.from("# title\n", "utf8"), { from: "nope", to: "docx" }),
+    ).rejects.toMatchObject({
       code: "FORMAT_UNKNOWN",
     });
   });
