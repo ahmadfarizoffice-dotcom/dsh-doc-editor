@@ -50,7 +50,7 @@ describe("DOCX round-trip", () => {
     const exported = await exportDocx(first.document, {
       preserveTimestamps: true,
     });
-     
+
     console.log(
       "export warnings:",
       exported.warnings,

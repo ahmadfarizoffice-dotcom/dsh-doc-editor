@@ -21,7 +21,6 @@ describe("DOCX import smoke test", () => {
     const result = await importDocx(bytes, { fileName: "fixture.docx" });
     const doc = result.document;
 
-     
     console.log("sections:", doc.sections.length);
     console.log(
       "blocks/section:",

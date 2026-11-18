@@ -28,7 +28,6 @@ describe("layout + render", () => {
     const { document } = await importDocx(bytes, { fileName: "fixture.docx" });
     const layout = layoutDocument(document);
 
-     
     console.log(
       "pages:",
       layout.pageCount,
