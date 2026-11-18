@@ -17,6 +17,28 @@ node tools/check-skills.mjs
 node tools/validate-mcp-schemas.mjs
 ```
 
+## Latest executed results
+
+Verified locally on 2026-11-18 (Node 24, Windows; CI runs the same commands on
+Linux with Node 22):
+
+| Command                                                       | Result                                                         |
+| ------------------------------------------------------------- | -------------------------------------------------------------- |
+| `vitest run` (whole workspace)                                | **19 files / 99 tests passed**                                 |
+| `tsc -p packages/core/tsconfig.json --noEmit`                 | pass                                                           |
+| `tsc -b packages/core apps/mcp apps/cli`                      | pass                                                           |
+| `tsc -p apps/web/tsconfig.json --noEmit` (client)             | pass                                                           |
+| `tsc -p apps/web/tsconfig.server.json --noEmit` (server)      | pass                                                           |
+| `eslint .`                                                    | 0 errors (warnings only for unused type imports)               |
+| `prettier --check .`                                          | pass                                                           |
+| `pnpm --filter <pkg> run build` (core, mcp, cli, web)         | pass                                                           |
+| `node tools/check-skills.mjs`                                 | OK — 12 skills, 50 canonical tools                             |
+| `node tools/validate-mcp-schemas.mjs`                         | OK — 50 tools, 8 resources, 8 prompts                          |
+| `node apps/cli/dist/main.js verify <fixture>`                 | 6/6 checks pass (9 pages, 21,704-byte PDF)                     |
+| `node apps/cli/dist/main.js roundtrip <fixture>`              | text identical, 310→310 paragraphs, 3→3 sections               |
+| stdio MCP smoke (real `apps/mcp/dist/main.js` via SDK client) | 50 tools listed, create/read/resource/prompt all OK            |
+| web server smoke (`:4317`)                                    | health, create, list, export PDF/HTML, render PDF/HTML all 200 |
+
 ## The fixture family
 
 ### 1. Supplied acceptance fixture

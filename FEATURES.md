@@ -25,7 +25,7 @@ mock functionality is not listed as implemented.
 | Dirty-state detection              | ✅     | session flag, editor badge, unsaved-change guard on close                        |
 | Document recovery                  | ✅     | localStorage snapshot restored on load                                           |
 | Keyboard shortcuts                 | ✅     | save, undo/redo, bold/italic/underline, find, print preview                      |
-| Multi-page editing                 | ✅     | editable surface + paginated preview from the layout engine                      |
+| Multi-page editing                 | ✅     | editable surface is continuous; print preview is paginated by the layout engine  |
 
 ## 4.2 Text formatting
 

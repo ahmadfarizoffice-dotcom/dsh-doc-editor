@@ -53,3 +53,6 @@ apps/web/.workspace/
 
 .workspace/
 
+
+dist-server/
+

@@ -42,10 +42,14 @@ pnpm test               # unit + integration + fixture + MCP protocol tests
 ### Editor
 
 ```bash
-pnpm run web:dev        # Vite dev server (http://127.0.0.1:5173)
+pnpm run web:dev        # Vite dev server (http://127.0.0.1:5173, proxies /api to :4317)
 # or, after a build:
-pnpm run web:start      # serves the built UI + HTTP API on PORT (default 4173)
+pnpm run web:start      # serves the built UI + HTTP API on :4317 (PORT overrides)
 ```
+
+The editor is model-first: typing, formatting, lists, tables, images, comments
+and AI applications are all translated into deterministic document operations,
+so undo, auditing and import/export see exactly the same document.
 
 ### MCP server (stdio)
 
