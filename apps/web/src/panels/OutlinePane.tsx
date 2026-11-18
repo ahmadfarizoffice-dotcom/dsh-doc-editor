@@ -15,7 +15,7 @@ export function OutlinePane({
   snapshot,
 }: OutlinePaneProps): React.JSX.Element {
   // `document` is mutated in place; `documentVersion` invalidates the memo.
-   
+
   const entries = useMemo(
     () => documentOutline(snapshot.document),
     [snapshot.document, snapshot.documentVersion],

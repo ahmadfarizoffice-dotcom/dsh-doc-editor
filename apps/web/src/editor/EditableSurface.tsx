@@ -192,7 +192,6 @@ export function EditableSurface(
     store.apply("Initialize document", (next) => {
       appendParagraph(next, "");
     });
-     
   }, [document, store]);
 
   const applySelection = useCallback(
@@ -316,26 +315,35 @@ export function EditableSurface(
 
   /* -------------------------------------------------------------- events */
 
-  const onBeforeInput = useCallback(
-    (event: React.FormEvent<HTMLDivElement>): void => {
-      const native = event.nativeEvent as InputEvent;
+  const handleBeforeInput = useCallback(
+    (native: InputEvent): void => {
       const inputType = native.inputType;
       if (!inputType) return;
       if (composingRef.current) {
         // Only composition events belong to an active IME session; any other
         // input type means the composition flag is stale (for example the IME
         // committed through automation) and must not disable the editor.
-        if (inputType === "insertCompositionText" || inputType === "deleteCompositionText") return;
+        if (
+          inputType === "insertCompositionText" ||
+          inputType === "deleteCompositionText"
+        )
+          return;
         composingRef.current = false;
       }
-      if (inputType === "insertCompositionText" || inputType === "deleteCompositionText") return;
+      if (
+        inputType === "insertCompositionText" ||
+        inputType === "deleteCompositionText"
+      )
+        return;
 
       // Nothing may mutate the DOM: the model is the source of truth.
-      event.preventDefault();
+      native.preventDefault();
       if (native.defaultPrevented === false) {
         // Non-cancelable edit (programmatic insertion). The browser will mutate
         // the DOM; capture the payload from the `input` event and reconcile.
-        fallbackInputRef.current = { mode: inputType.startsWith("insert") ? "insert" : "other" };
+        fallbackInputRef.current = {
+          mode: inputType.startsWith("insert") ? "insert" : "other",
+        };
         return;
       }
       const session = store.session;
@@ -469,6 +477,24 @@ export function EditableSurface(
     },
     [handleImageFiles, insertText, runEdit, store, toggleMark],
   );
+
+  /**
+   * React's `onBeforeInput` prop is a compatibility polyfill built from
+   * compositionend/keypress/textInput/paste; modern Chrome never dispatches
+   * `textInput`, so the polyfill silently misses ordinary typing. The editor
+   * therefore listens to the native `beforeinput` event on the editing host.
+   */
+  const beforeInputRef = useRef(handleBeforeInput);
+  beforeInputRef.current = handleBeforeInput;
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const listener = (event: Event): void => {
+      beforeInputRef.current(event as InputEvent);
+    };
+    root.addEventListener("beforeinput", listener);
+    return () => root.removeEventListener("beforeinput", listener);
+  }, []);
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>): void => {
@@ -712,7 +738,6 @@ export function EditableSurface(
           aria-label="Document body"
           spellCheck
           style={{ padding: paperPadding }}
-          onBeforeInput={onBeforeInput}
           onInput={onInput}
           onKeyDown={onKeyDown}
           onPaste={onPaste}

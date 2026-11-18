@@ -32,17 +32,17 @@ export function CommentsPane({
 }: CommentsPaneProps): React.JSX.Element {
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const model = snapshot.document;
-   
+
   const threads = useMemo(
     () => commentThreads(model),
     [document, snapshot.documentVersion],
   );
-   
+
   const revisions = useMemo(
     () => pendingRevisions(model),
     [document, snapshot.documentVersion],
   );
-   
+
   const summary = useMemo(
     () => revisionSummary(model),
     [document, snapshot.documentVersion],

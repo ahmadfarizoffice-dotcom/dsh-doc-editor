@@ -108,7 +108,7 @@ export function Toolbar({ store, snapshot }: ToolbarProps): React.JSX.Element {
   const selection = store.selection;
   const document = snapshot.document;
   // `document` is mutated in place, so `documentVersion` is the real dependency.
-   
+
   const active = useMemo(
     () => readActiveFormatting(document, selection),
     [document, snapshot.documentVersion, selection],
@@ -118,7 +118,7 @@ export function Toolbar({ store, snapshot }: ToolbarProps): React.JSX.Element {
   const run: RunProps =
     !hasRange && pending ? mergeRunProps(active.run, pending) : active.run;
   const paragraph = active.paragraph;
-   
+
   const styles = useMemo(
     () => listParagraphStyles(document),
     [document, snapshot.documentVersion],

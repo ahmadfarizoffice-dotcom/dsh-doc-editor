@@ -303,8 +303,6 @@ export async function createServer(
           );
         }
         document = createDocument({ title: requestedTitle });
-      } else {
-        
       }
 
       const shape = validateDocumentShape(document);
@@ -605,7 +603,9 @@ export async function createServer(
           const produced = bytesOf(rendered);
           if (produced) bytes = produced;
         } catch (error) {
-          warnings.push(`PDF renderer failed: ${error instanceof Error ? error.message : String(error)}`);
+          warnings.push(
+            `PDF renderer failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
       }
 
@@ -615,7 +615,9 @@ export async function createServer(
           const html = textOf(rendered);
           if (html) bytes = new TextEncoder().encode(html);
         } catch (error) {
-          warnings.push(`HTML renderer failed: ${error instanceof Error ? error.message : String(error)}`);
+          warnings.push(
+            `HTML renderer failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
       }
 
@@ -932,7 +934,6 @@ export async function createServer(
 </body></html>`);
   });
 
-   
   app.use(
     (
       error: unknown,

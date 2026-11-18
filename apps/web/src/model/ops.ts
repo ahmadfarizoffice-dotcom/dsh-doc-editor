@@ -121,8 +121,49 @@ export function selectionRange(
   return normalizeRange(order, selection.anchor, selection.focus);
 }
 
+/** Collapsed caret selection helper. */
 export function collapsed(position: TextPosition): EditorSelection {
   return { anchor: { ...position }, focus: { ...position } };
+}
+
+function sameRunProps(a: RunProps, b: RunProps): boolean {
+  const keysA = Object.keys(a).sort();
+  const keysB = Object.keys(b).sort();
+  if (keysA.length !== keysB.length) return false;
+  return keysA.every(
+    (key) =>
+      key in b &&
+      (a as Record<string, unknown>)[key] ===
+        (b as Record<string, unknown>)[key],
+  );
+}
+
+/**
+ * Merges adjacent text runs that carry identical formatting.
+ *
+ * Typing inserts one run per keystroke; without this the model (and every
+ * export) would accumulate thousands of single-character runs. The merge is
+ * formatting-preserving, so it never changes how the text renders.
+ */
+export function mergeAdjacentTextRuns(paragraph: Paragraph): void {
+  const merged: Inline[] = [];
+  for (const inline of paragraph.inlines) {
+    const previous = merged[merged.length - 1];
+    if (
+      previous &&
+      previous.type === "text" &&
+      inline.type === "text" &&
+      sameRunProps(previous.props, inline.props)
+    ) {
+      merged[merged.length - 1] = {
+        ...previous,
+        text: previous.text + inline.text,
+      };
+      continue;
+    }
+    merged.push(inline);
+  }
+  if (merged.length !== paragraph.inlines.length) paragraph.inlines = merged;
 }
 
 /* ------------------------------------------------------------- formatting */
@@ -584,7 +625,23 @@ export function insertTextAtSelection(
   if (!paragraph) throw new Error(`Unknown paragraph: ${range.start.blockId}`);
   const position = textOffsetToPosition(paragraph, startOffset);
   const result = insertText(doc, position, text, props ? { props } : {});
-  return collapsed(result.end);
+
+  // Merge the runs the insertion produced so typing does not create one run per
+  // keystroke; recompute the caret afterwards because merge changes run indices.
+  const endLocator = findParagraph(doc, result.end.blockId)?.paragraph;
+  const endOffset = endLocator ? offsetInParagraph(endLocator, result.end) : 0;
+  for (const blockId of result.blockIds) {
+    const created = findParagraph(doc, blockId)?.paragraph;
+    if (created) mergeAdjacentTextRuns(created);
+  }
+  const mergedEnd = findParagraph(doc, result.end.blockId)?.paragraph;
+  if (!mergedEnd) return collapsed(result.end);
+  return collapsed(
+    textOffsetToPosition(
+      mergedEnd,
+      Math.min(endOffset, paragraphText(mergedEnd).length),
+    ),
+  );
 }
 
 /** Deletes the selection; the caret ends where the range started. */
