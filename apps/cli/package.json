@@ -1,0 +1,22 @@
+{
+  "name": "@dsh-doc/cli",
+  "version": "1.0.0",
+  "description": "Command line interface for the document platform (inspect, convert, render, serve MCP).",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "dsh-doc": "./dist/main.js"
+  },
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@dsh-doc/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "5.9.3"
+  }
+}
