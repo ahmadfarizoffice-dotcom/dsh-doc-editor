@@ -1,0 +1,208 @@
+name: CI
+
+# Every push to main and every pull request must pass:
+#   quality     - lint, typecheck, formatting
+#   test        - unit + integration suites and the golden DOCX fixture
+#   build       - full workspace build with artifact assertions
+#   mcp-schemas - MCP tool manifest validation against the JSON Schema contract
+#   doc-fixture - explicit fixture regression run with render artifacts uploaded
+#
+# A failing test or build fails the workflow; no step may be allowed to fail
+# silently. Job results are the gate.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Read-only by design: CI needs no repository write access and no credentials.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality (lint, types, formatting)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The pnpm version is pinned once, in package.json "packageManager".
+      # Passing a second version here makes pnpm/action-setup fail with
+      # "Multiple versions of pnpm specified", so no version input is set.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      # Formatting is only enforced when the workspace actually declares the
+      # script; skipping is explicit rather than silently ignoring failures.
+      - name: Detect optional quality scripts
+        id: scripts
+        run: |
+          node --input-type=module -e "
+            import { readFileSync } from 'node:fs';
+            const scripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts ?? {};
+            console.log('format_check=' + String(Boolean(scripts['format:check'])));
+          " >> "$GITHUB_OUTPUT"
+
+      - name: Check formatting
+        if: steps.scripts.outputs.format_check == 'true'
+        run: pnpm run format:check
+
+      - name: Note skipped formatting check
+        if: steps.scripts.outputs.format_check != 'true'
+        run: echo "No 'format:check' script is declared in package.json; formatting is not enforced by CI yet."
+
+  test:
+    name: Tests (unit + integration + fixture)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build core
+        run: pnpm run build:core
+
+      - name: Run unit and integration tests
+        run: pnpm test
+
+      - name: Run golden DOCX fixture regression
+        run: pnpm run test:fixture
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  build:
+    name: Build workspace
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Assert build artifacts exist
+        run: |
+          set -euo pipefail
+          if [ ! -f apps/web/dist-client/index.html ]; then
+            echo "::error::missing apps/web/dist-client/index.html"
+            exit 1
+          fi
+          if [ ! -f apps/mcp/dist/main.js ]; then
+            echo "::error::missing apps/mcp/dist/main.js"
+            exit 1
+          fi
+          echo "build artifacts present: apps/web/dist-client/index.html, apps/mcp/dist/main.js"
+
+      # The MCP tool manifest is produced by the server build; hand it to the
+      # schema job instead of installing and building twice.
+      - name: Upload MCP build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-dist
+          path: apps/mcp/dist
+          if-no-files-found: error
+          retention-days: 1
+
+  mcp-schemas:
+    name: Validate MCP tool schemas
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Download MCP build output
+        uses: actions/download-artifact@v4
+        with:
+          name: mcp-dist
+          path: apps/mcp/dist
+
+      - name: Validate tools.json
+        run: node tools/validate-mcp-schemas.mjs
+
+  doc-fixture:
+    name: DOCX fixture regression
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run fixture regression explicitly
+        run: pnpm exec vitest run test/fixture
+
+      - name: Upload generated render artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: doc-fixture-render-output
+          path: fixtures/generated
+          if-no-files-found: ignore
+          retention-days: 7

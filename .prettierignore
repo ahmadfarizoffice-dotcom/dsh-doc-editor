@@ -1,0 +1,15 @@
+node_modules/
+dist/
+dist-*/
+coverage/
+test-output/
+fixtures/
+.workspace/
+.dsh-doc-data/
+.scratch/
+apps/web/dist-client/
+apps/web/public/
+pnpm-lock.yaml
+*.docx
+*.pdf
+*.png

@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+dist-ssr/
+*.tsbuildinfo
+apps/web/dist-client/
+apps/web/public/build/
+
+# Test output
+coverage/
+test-results/
+tests/output/
+fixtures/generated/
+
+# Local scratch and temporary artifacts
+.scratch/
+tmp/
+temp/
+*.tmp.*
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Runtime data (workspace documents, audit logs) produced locally
+.workspace-data/
+.dsh-doc-data/
+*.sqlite
+*.sqlite-journal
+
+# Secrets and local configuration
+.env
+.env.local
+.env.*.local
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+test-output/
+.workspace-smoke/
+apps/web/.workspace/
+
+
+.workspace/
+

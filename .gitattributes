@@ -1,0 +1,24 @@
+# Normalize text files to LF in the repository and let Git convert on checkout.
+* text=auto
+
+# Word-processing and page-description formats must never be line-ending mangled.
+*.docx binary
+*.docm binary
+*.dotx binary
+*.pdf binary
+
+# Raster and vector images.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+
+# Shell scripts always use LF so they stay runnable in Linux CI containers.
+*.sh text eol=lf
+
+# pnpm lockfiles and generated schemas are reviewable text.
+pnpm-lock.yaml text eol=lf
+*.json text eol=lf
+*.md text eol=lf

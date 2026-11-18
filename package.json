@@ -1,0 +1,46 @@
+{
+  "name": "dsh-doc-editor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Universal document editor, layout/rendering engine, conversion engine, MCP server and agent skills.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.28.5",
+  "scripts": {
+    "build": "pnpm run build:core && pnpm run build:apps",
+    "build:core": "pnpm --filter @dsh-doc/core run build",
+    "build:apps": "pnpm --filter @dsh-doc/mcp run build && pnpm --filter @dsh-doc/cli run build && pnpm --filter @dsh-doc/web run build",
+    "typecheck": "tsc -b packages/core apps/mcp apps/cli",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:unit": "vitest run packages",
+    "test:integration": "vitest run test",
+    "test:fixture": "vitest run test/fixture",
+    "test:mcp": "vitest run test/mcp",
+    "test:render": "vitest run test/render",
+    "coverage": "vitest run --coverage",
+    "fixture:inspect": "node tools/fixture-report.mjs",
+    "fixture:extend": "node tools/extend-fixture.mjs",
+    "mcp:start": "node apps/mcp/dist/main.js",
+    "web:dev": "pnpm --filter @dsh-doc/web run dev",
+    "web:start": "node apps/web/dist-server/server.js",
+    "cli": "node apps/cli/dist/main.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^24.10.0",
+    "@vitest/coverage-v8": "^3.2.7",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.73.0",
+    "vitest": "^3.2.7"
+  }
+}
