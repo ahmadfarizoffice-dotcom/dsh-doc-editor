@@ -1,0 +1,24 @@
+{
+  "name": "@dsh-doc/mcp",
+  "version": "1.0.0",
+  "description": "Model Context Protocol server exposing the document platform to external AI agents.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "dsh-doc-mcp": "./dist/main.js"
+  },
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node dist/write-manifest.js",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@dsh-doc/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "5.9.3"
+  }
+}
