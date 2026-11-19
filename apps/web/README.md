@@ -29,20 +29,39 @@ Workspace documents live in `<repo>/.workspace` (`DSH_DOC_WORKSPACE` overrides).
 the Node-only OOXML/conversion/render adapters. The server loads core modules
 dynamically at runtime (`server/core.ts`) and reports every absence explicitly.
 
+## Skins
+
+The chrome is presentation only: one model, one action layer
+(`src/skins/actions.ts`) and four faithful shells in `src/skins/`:
+
+| Skin              | Key pieces                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------- |
+| `gdocs` (default) | white app bar, compact toolbar, blue-gray canvas, floating page/word pill, right dock |
+| `word`            | blue title bar + search, ribbon tabs/groups, ruler, gray canvas, full status bar      |
+| `pages`           | light top bar with centred title, slim toolbar, Format inspector, warm canvas         |
+| `writer`          | menu bar, two toolbars, ruler, gray canvas, right deck, LibreOffice-style status bar  |
+
+Pick a skin from the app-bar control or the product's natural View menu; the
+choice is stored in `localStorage["dsh-doc:skin"]` and `?skin=` overrides it for
+the session without persisting. `data-skin` is set on the app root (and `<html>`
+for portalled dialogs); every rule in `src/styles/skins.css` is scoped under it.
+Controls without an implemented backend render disabled with a reason
+(`src/skins/unimplemented.ts`) instead of doing nothing.
+
 ## HTTP API
 
-| Method | Path                           | Behaviour                                                                                                                                                                              |
-| ------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/health`                  | version + probed capabilities (`renderer`, `formats`, `ai`, `model`, `docx`, `convert`) + warnings                                                                                     |
-| GET    | `/api/documents`               | workspace documents (`.json` records and `.docx` files)                                                                                                                                |
-| POST   | `/api/documents`               | create; uses the core model server-side, or accepts a client-created document                                                                                                          |
-| POST   | `/api/documents/open`          | multipart DOCX import (≤25 MB, `.docx/.dotx/.docm`) via the core OOXML adapter, else 501                                                                                               |
-| GET    | `/api/documents/:id`           | `{id, title, document, meta}`                                                                                                                                                          |
-| PUT    | `/api/documents/:id`           | save (404 when the id is unknown, 409 for DOCX-backed ids)                                                                                                                             |
-| DELETE | `/api/documents/:id`           | delete the JSON record and/or DOCX file                                                                                                                                                |
-| POST   | `/api/documents/:id/export`    | `docx/html/odt/rtf/md/txt/pdf`; conversion engine first, then the DOCX exporter, the PDF renderer and `documentText`; 501 with `FORMAT_UNAVAILABLE` when nothing can produce the bytes |
-| GET    | `/api/render?format=html\|pdf` | server layout renderer; 501 `RENDERER_UNAVAILABLE` when absent                                                                                                                         |
-| POST   | `/api/ai/assist`               | core assistant (`summarize`, `review`, `rewrite`, `translate`, `generate_content`, `suggest_edits`); 501 `AI_PROVIDER_NOT_CONFIGURED` when no provider is configured                   |
+| Method | Path                           | Behaviour                                                                                                                                                                                       |
+| ------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/health`                  | version + probed capabilities (`renderer`, `formats`, `ai`, `model`, `docx`, `convert`) + warnings                                                                                              |
+| GET    | `/api/documents`               | workspace documents (`.json` records and `.docx` files)                                                                                                                                         |
+| POST   | `/api/documents`               | create; uses the core model server-side, or accepts a client-created document                                                                                                                   |
+| POST   | `/api/documents/open`          | multipart import (≤25 MB) through the format registry: DOCX/DOTX/DOCM, DOC, ODT/OTT, Pages, RTF, HTML, Markdown, text; typed 4xx for external-only formats (`.gdoc`) and unsupported containers |
+| GET    | `/api/documents/:id`           | `{id, title, document, meta}`                                                                                                                                                                   |
+| PUT    | `/api/documents/:id`           | save (404 when the id is unknown, 409 for DOCX-backed ids)                                                                                                                                      |
+| DELETE | `/api/documents/:id`           | delete the JSON record and/or DOCX file                                                                                                                                                         |
+| POST   | `/api/documents/:id/export`    | `docx/html/odt/rtf/md/txt/pdf`; conversion engine first, then the DOCX exporter, the PDF renderer and `documentText`; 501 with `FORMAT_UNAVAILABLE` when nothing can produce the bytes          |
+| GET    | `/api/render?format=html\|pdf` | server layout renderer; 501 `RENDERER_UNAVAILABLE` when absent                                                                                                                                  |
+| POST   | `/api/ai/assist`               | core assistant (`summarize`, `review`, `rewrite`, `translate`, `generate_content`, `suggest_edits`); 501 `AI_PROVIDER_NOT_CONFIGURED` when no provider is configured                            |
 
 Ids are restricted to `[A-Za-z0-9_-]{1,128}`; JSON bodies are limited to 25 MB;
 uploads are memory-buffered, extension-filtered and size-limited.

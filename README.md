@@ -145,6 +145,12 @@ overrides it for a session without persisting. Controls whose backend is not
 implemented are rendered disabled with an explanation rather than as dead
 buttons.
 
+| Google Docs                                     | Microsoft Word                                          |
+| ----------------------------------------------- | ------------------------------------------------------- |
+| ![Google Docs skin](docs/screenshots/gdocs.png) | ![Microsoft Word skin](docs/screenshots/word.png)       |
+| **Apple Pages**                                 | **LibreOffice Writer**                                  |
+| ![Apple Pages skin](docs/screenshots/pages.png) | ![LibreOffice Writer skin](docs/screenshots/writer.png) |
+
 ## The golden fixture
 
 `fixtures/docx_docs_renderer_feature_test_cases.docx` (the supplied acceptance

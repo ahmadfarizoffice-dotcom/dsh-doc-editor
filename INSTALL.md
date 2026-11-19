@@ -108,7 +108,9 @@ a **Documents** panel in the main column.
 A `github:ahmadfarizoffice-dotcom/dsh-doc-editor-plugin` spec is equivalent. If
 the install stops with `failedAt: "spec-host"` and “connection to github.com
 timed out”, the pre-install reachability check failed before pnpm ran: retry, or
-paste the `github:` form.
+paste the `github:` form. A spec pinned to a commit (`…plugin#<sha>`) can trip
+that same pre-check on this release; install the branch spec instead and update
+by removing and reinstalling the bundle.
 
 Installing a bundle changes the profile and needs full-access permission in DSH;
 grant it only for a source you trust. This bundle runs no build scripts and has

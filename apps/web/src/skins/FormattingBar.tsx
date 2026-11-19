@@ -223,6 +223,7 @@ function ParagraphPanel({
 function moreFormattingMenu(
   actions: SkinActions,
   state: FormattingState,
+  snapshot: AppSnapshot,
 ): MenuDefinition {
   const items: MenuDefinition["items"] = [
     { kind: "heading", id: "more-character", label: "Character" },
@@ -275,7 +276,7 @@ function moreFormattingMenu(
       kind: "action",
       id: "more-marks",
       label: "Toggle formatting marks",
-      checked: false,
+      checked: snapshot.ui.showFormattingMarks,
       onSelect: actions.toggleFormattingMarks,
     },
     {
@@ -289,6 +290,7 @@ function moreFormattingMenu(
       kind: "action",
       id: "more-track",
       label: "Track changes",
+      checked: snapshot.document.settings.trackRevisions,
       onSelect: actions.toggleTrackChanges,
     },
   ];
@@ -763,7 +765,10 @@ function FormatControl({
       );
     case "more":
       return (
-        <MenuBar menus={[moreFormattingMenu(actions, state)]} align="end" />
+        <MenuBar
+          menus={[moreFormattingMenu(actions, state, snapshot)]}
+          align="end"
+        />
       );
     case "newDoc":
       return (
