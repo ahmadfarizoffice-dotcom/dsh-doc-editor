@@ -7,10 +7,12 @@
  * matrix surfaced by the `document_list_formats` tool.
  */
 import { docxAdapter } from "./docx.js";
+import { gdocAdapter } from "./gdoc.js";
 import { htmlAdapter } from "./html.js";
 import { legacyDocAdapter } from "./legacy-doc.js";
 import { markdownAdapter } from "./markdown.js";
 import { odtAdapter } from "./odt.js";
+import { pagesAdapter } from "./pages.js";
 import { pptxPreviewAdapter, xlsxPreviewAdapter } from "./ooxml-preview.js";
 import { rtfAdapter } from "./rtf.js";
 import { textAdapter } from "./text.js";
@@ -43,16 +45,26 @@ export {
   xlsxPreviewAdapter,
   pptxPreviewAdapter,
 } from "./ooxml-preview.js";
+export { importPages, snappyDecompress, pagesAdapter } from "./pages.js";
+export {
+  importGdoc,
+  parseGdocPointer,
+  gdocAdapter,
+  FORMAT_EXTERNAL_REQUIRED,
+} from "./gdoc.js";
+export type { GdocPointer } from "./gdoc.js";
 
 /**
- * Registry order matters for detection: container formats first, the
- * printable-text fallback last.
+ * Registry order matters for detection: container formats first, formats that
+ * own their input shape next, the printable-text fallback last.
  */
 const ADAPTERS: FormatAdapter[] = [
   docxAdapter,
   odtAdapter,
   xlsxPreviewAdapter,
   pptxPreviewAdapter,
+  pagesAdapter,
+  gdocAdapter,
   legacyDocAdapter,
   rtfAdapter,
   htmlAdapter,
