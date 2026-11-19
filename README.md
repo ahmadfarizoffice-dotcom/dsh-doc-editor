@@ -95,8 +95,9 @@ https://github.com/ahmadfarizoffice-dotcom/dsh-doc-editor-plugin
 
 The bundle is self-contained (the engine is inlined, no dependencies, no install
 scripts) and adds a **Documents panel** — a real Word-like editor with the seven
-tabs **File · Home · Insert · Design · Layout · References · View**, an editable
-page, and 26 `document_*` tools. Agent equivalent:
+tabs **File · Home · Insert · Design · Layout · References · View**, icon-only
+commands with hover tooltips, native folder/file pickers that open a document as
+a workspace plus chat session, and 26 `document_*` tools. Agent equivalent:
 
 ```text
 plugin_manager action: install_bundle target: github:ahmadfarizoffice-dotcom/dsh-doc-editor-plugin

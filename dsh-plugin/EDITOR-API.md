@@ -11,6 +11,101 @@ All routes live under `/api/dsh-documents` and require the header
 `{ ok: false, error: { code, message } }` with HTTP 200 (the page renders the
 message) except for export, which returns the file bytes.
 
+## Workspaces, folder browsing and opening files
+
+The panel never asks a user to type a path unless native pickers are
+unavailable. Two Host routes back the pickers and one switches the document
+workspace; opening a document also prepares a Harness workspace and chat
+session at the file's folder.
+
+### `GET /browse?path=<absolute directory>`
+
+Lists one directory for the in-panel folder browser. With no `path`, returns the
+browse roots.
+
+```json
+{
+  "ok": true,
+  "path": "C:\\Users\\me\\Documents\\Reports",
+  "parent": "C:\\Users\\me\\Documents",
+  "roots": [
+    { "label": "Home", "path": "C:\\Users\\me" },
+    { "label": "Workspace", "path": "…" }
+  ],
+  "entries": [
+    {
+      "name": "Q3 report.docx",
+      "path": "…\\Q3 report.docx",
+      "kind": "document",
+      "importable": true,
+      "size": 41233,
+      "modified": "2026-11-01T09:12:00.000Z"
+    },
+    {
+      "name": "Archive",
+      "path": "…\\Archive",
+      "kind": "directory",
+      "importable": false
+    }
+  ],
+  "truncated": false
+}
+```
+
+Browsing is **read-only** and limited to the user's home directory, the current
+document workspace and the session working directory; the root listing also
+exposes drive roots on Windows. Paths outside those roots fail with
+`PATH_OUTSIDE_WORKSPACE`. Files are never executed, and only names/sizes are
+returned — never contents.
+
+### `GET /workspace`
+
+```json
+{ "ok": true, "path": "…", "readOnly": false, "documents": [ … ] }
+```
+
+### `POST /workspace { "path": "<absolute directory>", "create": false }`
+
+Switches the panel's document workspace to `path` (created when `create` is
+true, which the folder picker uses for a new folder). It also **finds or
+creates the Harness workspace** for that directory through the Host's
+`workspaceRegistry`, so the caller can start a chat session there.
+
+```json
+{
+  "ok": true,
+  "path": "C:\\Users\\me\\Documents\\Reports",
+  "created": true,
+  "dshWorkspaceId": "…"
+}
+```
+
+`dshWorkspaceId` is omitted when the profile has no workspace registry; the
+Client then only switches the document workspace and says so. Switching keeps
+documents that are already open in the previous workspace in memory but moves
+new opens and saves to the new one.
+
+### `POST /open-path { "path": "<absolute file path>" }`
+
+Opens a document that the folder browser selected, without uploading it.
+
+```json
+{
+  "ok": true,
+  "documentId": "doc-…",
+  "path": "…\\Q3 report.docx",
+  "directory": "…\\Reports",
+  "title": "Q3 report",
+  "warnings": []
+}
+```
+
+`POST /open` (multipart upload) returns the same `directory` field so the Client
+can switch there too. The Client then calls `POST /workspace` and, when
+`dshWorkspaceId` comes back, starts a new chat session in that workspace through
+the Client's workspace service (`uiWorkspace.startSession`), switching to the
+conversation only when the user asks (the panel shows a "Chat ready" chip).
+
 ## Reads
 
 ### `GET /bootstrap?id=<documentId>`

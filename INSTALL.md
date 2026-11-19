@@ -92,9 +92,11 @@ The published bundle is self-contained (`engine.js` inlines this engine), has no
 dependencies and no install scripts. Verified on DSH **0.2.2-rc.3**: installing
 it applies immediately under HMR, registers **26 `document_*` tools**, and adds a
 **Documents** panel — a Word-like editor with the seven ribbon tabs (File, Home,
-Insert, Design, Layout, References, View), an editable page, tables, images,
-comments-free review tools, layout controls and save/export — in the main
-column.
+Insert, Design, Layout, References, View), icon-only commands with hover
+tooltips, native file and folder pickers, layout controls and save/export — in
+the main column. Choosing a folder or opening a document switches the document
+workspace to that folder and prepares a Harness workspace with a new chat session
+there, so the agent works beside the file you opened.
 
 The panel is a client module, so after installing or updating the bundle reload
 the Harness page; if the panel still shows the previous version, restart the

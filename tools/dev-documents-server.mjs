@@ -116,6 +116,64 @@ const fakeWebServer = {
 };
 
 const workspace = await mkdtemp(path.join(tmpdir(), "dsh-doc-panel-"));
+const sampleFolder = path.join(workspace, "Reports");
+await mkdir(path.join(sampleFolder, "Archive"), { recursive: true });
+await writeFile(
+  path.join(sampleFolder, "Q3 report.docx"),
+  await readFile(
+    path.join(repo, "fixtures/docx_docs_renderer_feature_test_cases.docx"),
+  ),
+);
+await writeFile(path.join(sampleFolder, "notes.txt"), "Loose notes.\n", "utf8");
+
+// A small importable document keeps the folder-flow browser capture light.
+const engineForSeed = await import(
+  pathToFileURL(path.join(pluginDir, "engine.js")).href
+);
+const seedService = new engineForSeed.DocumentService({
+  workspaceRoot: path.join(workspace, ".seed"),
+  allowedReadRoots: [workspace],
+  auditPath: path.join(workspace, ".seed-audit.log"),
+});
+await seedService.init();
+const seedCreated = await seedService.createDocument({
+  title: "Small memo",
+  paragraphs: [
+    "Small memo opened from the folder browser.",
+    "The workspace and chat session were prepared at this folder.",
+  ],
+});
+const seedDocx = await seedService.exportDocument(
+  seedCreated.documentId,
+  "docx",
+);
+await writeFile(
+  path.join(sampleFolder, "Small memo.docx"),
+  Buffer.from(seedDocx.dataBase64, "base64"),
+);
+
+const fakeRegistry = new Map();
+const fakeWorkspaceRegistry = {
+  resolveByPath(candidate) {
+    return fakeRegistry.get(path.resolve(candidate));
+  },
+  async create(candidate, title) {
+    const resolved = path.resolve(candidate);
+    const existing = fakeRegistry.get(resolved);
+    if (existing) return existing;
+    const record = {
+      id: `ws-${fakeRegistry.size + 1}`,
+      path: resolved,
+      title: title ?? path.basename(resolved),
+    };
+    fakeRegistry.set(resolved, record);
+    return record;
+  },
+  list() {
+    return [...fakeRegistry.values()];
+  },
+};
+
 const plugin = await import(
   pathToFileURL(path.join(pluginDir, "index.js")).href
 );
@@ -132,7 +190,9 @@ const ctx = {
     return () => dispose?.();
   },
   get(name) {
-    return name === "webServer" ? fakeWebServer : undefined;
+    if (name === "webServer") return fakeWebServer;
+    if (name === "workspaceRegistry") return fakeWorkspaceRegistry;
+    return undefined;
   },
 };
 
@@ -246,6 +306,10 @@ const page = `<!doctype html>
 <script src="/harness/react.js"></script>
 <script>
   window.__DSH_HARNESS__ = { documentId: ${JSON.stringify(documentId)} };
+  window.__DSH_PICK_DIRECTORY__ = ${JSON.stringify(sampleFolder)};
+  window.__DSH_PICKED__ = [];
+  window.__DSH_SESSIONS__ = [];
+  window.__DSH_PANEL__ = null;
   window.__ModuleLoader__ = {
     load(definition) { window.__DSH_DEF__ = definition; },
   };
@@ -264,6 +328,20 @@ const page = `<!doctype html>
     const registry = new Map();
     const hostCtx = {
       locale: { getLocale: () => ({ id: "en" }) },
+      uiWorkspace: {
+        async pickDirectory() {
+          window.__DSH_PICKED__.push("pickDirectory");
+          return window.__DSH_PICK_DIRECTORY__;
+        },
+        startSession(workspaceId) {
+          window.__DSH_SESSIONS__.push(workspaceId);
+        },
+        openWorkspace() {},
+        connectWorkspace() {},
+      },      layout: { selectPanel() {} },
+      workspaces: {
+        async create({ path }) { return { id: "ws-local", path }; },
+      },
       slots: {
         inject(_key, callback) { return callback(); },
         register(spec, Component) {
@@ -272,7 +350,9 @@ const page = `<!doctype html>
         },
       },
     };
+    hostCtx.get = (name) => hostCtx[name];
     modules.apply(hostCtx);
+    window.__DSH_PANEL__ = modules;
     const Panel = registry.get("dsh-documents");
     if (!Panel) throw new Error("panel component was not registered");
     ReactBundle.ReactDOMClient.createRoot(document.getElementById("root")).render(
@@ -344,7 +424,7 @@ const server = createServer(async (req, res) => {
         return;
       }
     }
-    const bodyText = Buffer.concat(chunks).toString("utf8");
+    const rawBody = Buffer.concat(chunks);
     const replay = {
       method: req.method,
       url: req.url,
@@ -354,7 +434,7 @@ const server = createServer(async (req, res) => {
         origin: `http://127.0.0.1:${port}`,
       },
       async *[Symbol.asyncIterator]() {
-        if (bodyText) yield Buffer.from(bodyText);
+        if (rawBody.length > 0) yield rawBody;
       },
     };
     await route.handler(replay, res);

@@ -175,17 +175,24 @@ destructive-operation annotations — **✅** (see [MCP.md](MCP.md)).
 **DeepSeek Harness plugin:** a self-contained bundle whose Documents panel is a
 real editor, not a preview — **✅**. It renders a seven-tab Word-style ribbon
 (**File, Home, Insert, Design, Layout, References, View**) with Word's grouped
-commands, and an editable page where clicking, typing, Enter/Backspace,
-selection formatting, tables with editable cells, images, breaks, hyperlinks,
-header/footer text, TOC, footnotes, equations, margins/orientation/size/columns,
-zoom, ruler, formatting marks, undo/redo, save and export all work through the
-same engine and the 27-operation Host API. Character formatting with a collapsed
-caret applies to the current paragraph (Word behaviour). Edits are applied
-locally first and synced to the Host, so the caret never jumps; structural
-changes refetch the page map. Unsupported Word features (page colour, shapes,
-symbols, captions, cross-references, page-number fields in headers/footers) are
-disabled with a stated reason. Installing from a GitHub link is the only setup
-step; see [INSTALL.md](INSTALL.md).
+commands, icon-only buttons whose names and shortcuts appear as hover tooltips
+(plus a **Show labels** toggle), and an editable page where clicking, typing,
+Enter/Backspace, selection formatting, tables with editable cells, images,
+breaks, hyperlinks, header/footer text, TOC, footnotes, equations,
+margins/orientation/size/columns, zoom, ruler, formatting marks, undo/redo, save
+and export all work through the same engine and the 27-operation Host API.
+Character formatting with a collapsed caret applies to the current paragraph
+(Word behaviour). Edits are applied locally first and synced to the Host, so the
+caret never jumps; structural changes refetch the page map. **Opening is
+seamless:** _Choose folder…_ uses the operating system's folder dialog and an
+in-panel browser (or _Open document…_ uses the system file dialog), then switches
+the document workspace to that folder, reuses an already-open session for the
+same file, names imported files after the file, and prepares a Harness workspace
+and new chat session there with a _Chat ready_ chip that switches to it.
+Unsupported Word features (page colour, shapes, symbols, captions,
+cross-references, page-number fields in headers/footers) are disabled with a
+stated reason. Installing from a GitHub link is the only setup step; see
+[INSTALL.md](INSTALL.md).
 
 ## 9. Agent tools and skills
 
