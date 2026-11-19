@@ -191,6 +191,38 @@ audit and formatting preservation behave exactly like manual edits. Summarise
 and review work without a provider; generative operations return
 `AI_PROVIDER_REQUIRED` when none is configured.
 
+## Packaging and agent integrations
+
+**DeepSeek Harness bundle.** `dsh-plugin/` is the source of a separate,
+self-contained bundle repository. `tools/build-dsh-plugin.mjs`:
+
+1. takes the compiled `packages/core/dist/dsh-entry.js` (service + tool registry
+   - AI helpers),
+2. bundles it, and every dependency, into one `engine.js` with esbuild,
+3. rewrites PDFKit's generated standard-font loader table so its
+   `#standard-fonts/*` package-import specifiers resolve to inlined font data
+   instead of requiring a package context the bundle does not have,
+4. copies the Host half (`index.js`), the Client half (`client.js`), the patch,
+   locales, icon and detail document into `dist/dsh-plugin/`.
+
+`tools/check-dsh-plugin.mjs` then validates the manifest, display metadata, the
+client identity, registers the Host plugin against a mock Cordis context, and
+runs a create → read → PDF round trip. The published repository is build-free:
+installing it from a GitHub link downloads `engine.js` and nothing else, with no
+install scripts and no dependency graph.
+
+The Host half registers 17 `document_*` tools on `ctx.tools` and, when
+`webServer` exists, a same-origin `/api/dsh-documents` route family used by the
+Client half. The Client half registers a `sidebar.panellist` icon and a `main`
+panel keyed `dsh-documents`, both verified live through the Slot inspector.
+
+**Other agents.** `integrations/` holds a Claude Code plugin (manifest,
+marketplace, `.mcp.json`, 12 skills, 3 slash commands), a Codex `config.toml`
+plus idempotent installer, an Antigravity MCP config, and an OpenCode config
+with an optional tool plugin. Every route launches the same
+`apps/mcp/dist/main.js`; the shared `resolve-repo.mjs` refuses to start without a
+built server and prints the exact build command.
+
 ## Security model
 
 - Workspace-confined paths with explicit allowed read roots; traversal rejected.

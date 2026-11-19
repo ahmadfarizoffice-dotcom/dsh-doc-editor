@@ -10,22 +10,22 @@ mock functionality is not listed as implemented.
 
 ## 4.1 Basic editing
 
-| Feature                            | Status | Notes / entry point                                                              |
-| ---------------------------------- | ------ | -------------------------------------------------------------------------------- |
-| Create document                    | ✅     | `document_create`, editor "New"                                                  |
-| Open document                      | ✅     | `document_open`; DOCX/DOTX/DOCM built in, other formats via adapters             |
-| Save / Save As                     | ✅     | `document_save`, `document_save_as`; writes DOCX + lossless model snapshot       |
-| Rename / duplicate / delete        | ✅     | workspace API (`PUT /api/documents/:id`, `deleteDocument`), editor document list |
-| Undo / redo                        | ✅     | snapshot history in the session; `document_undo`, `document_redo`                |
-| Cut / copy / paste                 | ✅     | editor clipboard handling routed through model operations                        |
-| Select all                         | ✅     | editor `Ctrl+A`                                                                  |
-| Find and replace                   | ✅     | `document_search` + editor dialog (replace / replace all)                        |
-| Word / character / paragraph count | ✅     | `documentStats`, status bar, `document_get_metadata`                             |
-| Autosave                           | ✅     | editor idle autosave to localStorage + server save                               |
-| Dirty-state detection              | ✅     | session flag, editor badge, unsaved-change guard on close                        |
-| Document recovery                  | ✅     | localStorage snapshot restored on load                                           |
-| Keyboard shortcuts                 | ✅     | save, undo/redo, bold/italic/underline, find, print preview                      |
-| Multi-page editing                 | ✅     | editable surface is continuous; print preview is paginated by the layout engine  |
+| Feature                            | Status | Notes / entry point                                                                                                    |
+| ---------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Create document                    | ✅     | `document_create`, editor "New"                                                                                        |
+| Open document                      | ✅     | `document_open`; DOCX/DOTX/DOCM built in, other formats via adapters (Apple Pages import, `.gdoc` pointer recognition) |
+| Save / Save As                     | ✅     | `document_save`, `document_save_as`; writes DOCX + lossless model snapshot                                             |
+| Rename / duplicate / delete        | ✅     | workspace API (`PUT /api/documents/:id`, `deleteDocument`), editor document list                                       |
+| Undo / redo                        | ✅     | snapshot history in the session; `document_undo`, `document_redo`                                                      |
+| Cut / copy / paste                 | ✅     | editor clipboard handling routed through model operations                                                              |
+| Select all                         | ✅     | editor `Ctrl+A`                                                                                                        |
+| Find and replace                   | ✅     | `document_search` + editor dialog (replace / replace all)                                                              |
+| Word / character / paragraph count | ✅     | `documentStats`, status bar, `document_get_metadata`                                                                   |
+| Autosave                           | ✅     | editor idle autosave to localStorage + server save                                                                     |
+| Dirty-state detection              | ✅     | session flag, editor badge, unsaved-change guard on close                                                              |
+| Document recovery                  | ✅     | localStorage snapshot restored on load                                                                                 |
+| Keyboard shortcuts                 | ✅     | save, undo/redo, bold/italic/underline, find, print preview                                                            |
+| Multi-page editing                 | ✅     | editable surface is continuous; print preview is paginated by the layout engine                                        |
 
 ## 4.2 Text formatting
 
@@ -136,6 +136,20 @@ Limits: RTL is applied as paragraph/run direction without full bidi reordering
 (◐); hyphenation is not applied automatically (✖, flag reserved); font
 substitution uses standard-14 metrics for all families (◐, reported).
 
+## 5.1 Editor shells (skins)
+
+The standalone editor reproduces four word-processor chromes over one model and
+one action layer: **Google Docs**, **Microsoft Word**, **Apple Pages** and
+**LibreOffice Writer** — **✅**. Each has its own app bar / ribbon / menu bar,
+toolbar groupings, canvas colours, rulers, panels and status bar. The skin is
+presentation only: switching it preserves text, selection, undo history and
+autosave state, and it is stored under `dsh-doc:skin` (with a session-only
+`?skin=` override). Controls with no implemented backend are disabled with an
+explanation. Approximation limits: menus and ribbons are visual replicas, not
+pixel-identical clones, and product-specific features that this engine does not
+implement (for example Word's Design ideas or Pages' media browser) are omitted
+rather than faked.
+
 ## 6. Conversion engine
 
 Independent of the UI, with a capability matrix and loss reporting; all required
@@ -175,15 +189,27 @@ format adapters, editor selection/ops, conversion pairs — see
    editing; PDFs are for distribution.
 2. **Google Drive / Google Docs API integration is not implemented.** Google
    Docs interoperability is achieved by importing/exporting DOCX and HTML.
-3. Charts, SmartArt, embedded OLE and VML shapes are preserved and placeholdered,
+   A `.gdoc` file is recognised as a Drive pointer (JSON with `doc_id`,
+   `resource_id`, `email`) but cannot be opened: import performs no network
+   access and fails with `FORMAT_EXTERNAL_REQUIRED`, telling the user to
+   download the document from Google Docs as `.docx` and import that.
+3. **Apple Pages import is text-focused and read-only.** Pages '09 (`index.xml`)
+   recovers paragraph text, empty paragraphs, span/line-break text and headings
+   that a style name or outline level declares; unknown elements are reported.
+   Modern Pages (2013+, `Index/*.iwa`) is a **text-recovery preview only**:
+   IWA Snappy frames are decoded and protobuf strings scanned generically, so
+   structure, styles, tables, images and layout are not recovered (marked with
+   `metadata.custom.DSHPreview="true"` and explicit losses). There is no Pages
+   export.
+4. Charts, SmartArt, embedded OLE and VML shapes are preserved and placeholdered,
    not natively rendered.
-4. Continuous section breaks render as page breaks (warned).
-5. Automatic hyphenation, kerning and ligatures are not applied.
-6. Vertical cell merges and tight/through text wrap are approximated.
-7. Collaborative real-time editing and password-based document protection are
+5. Continuous section breaks render as page breaks (warned).
+6. Automatic hyphenation, kerning and ligatures are not applied.
+7. Vertical cell merges and tight/through text wrap are approximated.
+8. Collaborative real-time editing and password-based document protection are
    not implemented.
-8. Very large documents are paginated in a single pass; incremental pagination
+9. Very large documents are paginated in a single pass; incremental pagination
    is future work.
-9. Legacy `.doc`, RTF, ODT, spreadsheet and presentation adapters are
-   best-effort importers/exporters; the per-format fidelity and loss reporting is
-   in [SUPPORTED_FORMATS.md](SUPPORTED_FORMATS.md).
+10. Legacy `.doc`, RTF, ODT, Apple Pages, spreadsheet and presentation adapters
+    are best-effort importers/exporters; the per-format fidelity and loss
+    reporting is in [SUPPORTED_FORMATS.md](SUPPORTED_FORMATS.md).

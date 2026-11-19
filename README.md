@@ -83,6 +83,68 @@ node apps/cli/dist/main.js verify fixtures/docx_docs_renderer_feature_test_cases
 node apps/cli/dist/main.js roundtrip fixtures/docx_docs_renderer_feature_test_cases.docx
 ```
 
+## Install as an agent plugin (no build)
+
+### DeepSeek Harness
+
+Paste this into **Plugins → Add plugin** (verified on DSH `0.2.2-rc.3`):
+
+```text
+https://github.com/ahmadfarizoffice-dotcom/dsh-doc-editor-plugin
+```
+
+The bundle is self-contained (the engine is inlined, no dependencies, no install
+scripts) and adds a **Documents** panel in the main column plus 17
+`document_*` tools. Agent equivalent:
+
+```text
+plugin_manager action: install_bundle target: github:ahmadfarizoffice-dotcom/dsh-doc-editor-plugin
+```
+
+Source: [`dsh-plugin/`](dsh-plugin) in this repository; published from
+[dsh-doc-editor-plugin](https://github.com/ahmadfarizoffice-dotcom/dsh-doc-editor-plugin).
+
+### Claude Code
+
+```text
+/plugin marketplace add ahmadfarizoffice-dotcom/dsh-doc-editor
+/plugin install dsh-doc@dsh-doc
+```
+
+The plugin lives in [`integrations/claude-code`](integrations/claude-code)
+(MCP server launch, the 12 skills, and slash commands). A plain `.mcp.json` is
+included for projects that do not use plugins.
+
+### Codex CLI, Google Antigravity, OpenCode
+
+Ready-made configs and installers live in [`integrations/`](integrations):
+`codex/config.toml` plus an idempotent `install.mjs`, `antigravity/mcp_config.json`,
+and `opencode/opencode.json` with an optional 3-tool plugin. All of them launch
+the same MCP server; see [INSTALL.md](INSTALL.md) for exact paths and the
+absolute-path placeholders you must fill in.
+
+### Standalone editor
+
+`pnpm run web:start` serves the editor at `http://127.0.0.1:4317`.
+
+#### Editor skins
+
+The same document, selection and undo history render under four faithful
+chrome styles; the skin is presentation only and never touches the model:
+
+| Skin                               | What it reproduces                                                                                                                                   |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Google Docs** (`gdocs`, default) | white app bar with document glyph and File/Edit/View menus, compact formatting bar, share pill and avatar, blue-gray canvas, floating page/word pill |
+| **Microsoft Word** (`word`)        | blue title bar with search, ribbon tabs and labelled groups, ruler, gray workspace, status bar with page/word count, language, zoom and view icons   |
+| **Apple Pages** (`pages`)          | light top bar with centred inline title, slim toolbar, Format inspector, warm canvas, page indicator                                                 |
+| **LibreOffice Writer** (`writer`)  | menu bar, standard + formatting toolbars, gray canvas with ruler, sidebar deck, status bar with page style and insert mode                           |
+
+Switch skins from the skin menu in each app bar; the choice persists in
+`localStorage` (`dsh-doc:skin`). `?skin=word` (or `pages`, `writer`, `gdocs`)
+overrides it for a session without persisting. Controls whose backend is not
+implemented are rendered disabled with an explanation rather than as dead
+buttons.
+
 ## The golden fixture
 
 `fixtures/docx_docs_renderer_feature_test_cases.docx` (the supplied acceptance
@@ -130,7 +192,7 @@ Full detail: [FEATURES.md](FEATURES.md) · [SUPPORTED_FORMATS.md](SUPPORTED_FORM
 packages/core/src/
   model/     versioned document model + deterministic operations
   docx/      OOXML import/export (DOCX, DOTX, DOCM)
-  formats/   HTML, Markdown, TXT, RTF, ODT, legacy DOC, XLSX/PPTX preview
+  formats/   HTML, Markdown, TXT, RTF, ODT, legacy DOC, Apple Pages, XLSX/PPTX preview
   layout/    pagination and line/table/float layout (font metrics included)
   render/    HTML, SVG, PDF renderers
   convert/   conversion engine: capability matrix, fidelity, loss reports
@@ -141,19 +203,23 @@ apps/
   web/       editor UI (React + Vite) and HTTP API server
   mcp/       Model Context Protocol server (stdio)
   cli/       `dsh-doc` command line interface
+dsh-plugin/  DeepSeek Harness bundle (Host tools + Documents panel + client half)
+integrations/ Claude Code, Codex, Antigravity and OpenCode packages
 skills/      12 agent skills with routing and safety guidance
-fixtures/    golden DOCX fixtures
+fixtures/    golden DOCX fixtures and the extended acceptance fixture
 test/        fixture, render and round-trip acceptance tests
 ```
 
 ## Documentation
 
+- [INSTALL.md](INSTALL.md) — plugin install for DSH, Claude Code, Codex, Antigravity, OpenCode and the standalone editor
 - [ARCHITECTURE.md](ARCHITECTURE.md) — components, data flow, invariants, decisions
 - [FEATURES.md](FEATURES.md) — implemented feature inventory and honest status
 - [SUPPORTED_FORMATS.md](SUPPORTED_FORMATS.md) — import/export matrix and fidelity notes
 - [MCP.md](MCP.md) — tools, resources, prompts, security, configuration
 - [AGENT_SKILLS.md](AGENT_SKILLS.md) — skills inventory, routing, integration
 - [TESTING.md](TESTING.md) — fixture procedure, test suite, CI, regression policy
+- [AGENTS.md](AGENTS.md) — short agent-facing entry point
 - [CONTRIBUTING.md](CONTRIBUTING.md) — workflow, adding adapters/tools/skills
 - [SECURITY.md](SECURITY.md) — threat model and reporting
 
