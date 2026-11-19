@@ -27,7 +27,10 @@ const port = portArg >= 0 ? Number(args[portArg + 1]) : 4399;
 const requireFromWeb = createRequire(path.join(repo, "apps/web/package.json"));
 
 async function loadEsbuild() {
-  for (const candidate of [path.join(repo, "package.json"), path.join(repo, "apps/web/package.json")]) {
+  for (const candidate of [
+    path.join(repo, "package.json"),
+    path.join(repo, "apps/web/package.json"),
+  ]) {
     try {
       return createRequire(candidate)("esbuild");
     } catch {
@@ -36,9 +39,14 @@ async function loadEsbuild() {
   }
   const { readdir } = await import("node:fs/promises");
   const store = path.join(repo, "node_modules/.pnpm");
-  const dir = (await readdir(store)).find((name) => name.startsWith("esbuild@"));
+  const dir = (await readdir(store)).find((name) =>
+    name.startsWith("esbuild@"),
+  );
   if (!dir) throw new Error("esbuild not found");
-  const mod = await import(pathToFileURL(path.join(store, dir, "node_modules/esbuild/lib/main.js")).href);
+  const mod = await import(
+    pathToFileURL(path.join(store, dir, "node_modules/esbuild/lib/main.js"))
+      .href
+  );
   return mod.default ?? mod;
 }
 
@@ -108,10 +116,16 @@ const fakeWebServer = {
 };
 
 const workspace = await mkdtemp(path.join(tmpdir(), "dsh-doc-panel-"));
-const plugin = await import(pathToFileURL(path.join(pluginDir, "index.js")).href);
+const plugin = await import(
+  pathToFileURL(path.join(pluginDir, "index.js")).href
+);
 
 const ctx = {
-  logger: { warn: (message) => console.warn("[host]", message), info: () => {}, error: console.error },
+  logger: {
+    warn: (message) => console.warn("[host]", message),
+    info: () => {},
+    error: console.error,
+  },
   tools: { register: () => () => {} },
   effect(fn) {
     const dispose = fn();
@@ -130,13 +144,19 @@ async function seed() {
   void create;
   const call = async (method, urlPath, body) => {
     const url = new URL(urlPath, `http://127.0.0.1:${port}`);
-    const route = routes.find((candidate) => url.pathname.startsWith(candidate.path));
+    const route = routes.find((candidate) =>
+      url.pathname.startsWith(candidate.path),
+    );
     if (!route) throw new Error(`no route for ${urlPath}`);
     const chunks = [];
     const req = {
       method,
       url: url.pathname + url.search,
-      headers: { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, "x-dsh-documents": "1" },
+      headers: {
+        host: `127.0.0.1:${port}`,
+        origin: `http://127.0.0.1:${port}`,
+        "x-dsh-documents": "1",
+      },
       async *[Symbol.asyncIterator]() {
         if (body !== undefined) yield Buffer.from(JSON.stringify(body));
       },
@@ -151,13 +171,22 @@ async function seed() {
           return this;
         },
         end(buffer) {
-          resolve({ status: this.statusCode, headers: this.headers, body: buffer });
+          resolve({
+            status: this.statusCode,
+            headers: this.headers,
+            body: buffer,
+          });
         },
         write() {},
       };
-      Promise.resolve(route.handler(req, res)).catch((error) => resolve({ status: 500, body: String(error) }));
+      Promise.resolve(route.handler(req, res)).catch((error) =>
+        resolve({ status: 500, body: String(error) }),
+      );
     });
-    return { ...result, json: () => JSON.parse(Buffer.from(result.body).toString("utf8")) };
+    return {
+      ...result,
+      json: () => JSON.parse(Buffer.from(result.body).toString("utf8")),
+    };
   };
 
   const created = await call("POST", "/api/dsh-documents/create", {
@@ -264,34 +293,54 @@ const server = createServer(async (req, res) => {
   try {
     if (url.pathname === "/" || url.pathname === "/index.html") {
       const body = Buffer.from(page, "utf8");
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-length": String(body.length) });
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "content-length": String(body.length),
+      });
       res.end(body);
       return;
     }
     if (url.pathname === "/harness/react.js") {
       const body = Buffer.from(reactBundle, "utf8");
-      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "content-length": String(body.length) });
+      res.writeHead(200, {
+        "content-type": "text/javascript; charset=utf-8",
+        "content-length": String(body.length),
+      });
       res.end(body);
       return;
     }
     if (url.pathname === "/harness/client.js") {
       const body = Buffer.from(clientSource, "utf8");
-      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "content-length": String(body.length) });
+      res.writeHead(200, {
+        "content-type": "text/javascript; charset=utf-8",
+        "content-length": String(body.length),
+      });
       res.end(body);
       return;
     }
 
-    const route = routes.find((candidate) => url.pathname.startsWith(candidate.path));
+    const route = routes.find((candidate) =>
+      url.pathname.startsWith(candidate.path),
+    );
     if (!route) {
-      jsonResponse(res, 404, { ok: false, error: { code: "NOT_FOUND", message: "no route" } });
+      jsonResponse(res, 404, {
+        ok: false,
+        error: { code: "NOT_FOUND", message: "no route" },
+      });
       return;
     }
 
     const chunks = [];
     for await (const chunk of req) {
       chunks.push(chunk);
-      if (chunks.reduce((sum, part) => sum + part.length, 0) > 20 * 1024 * 1024) {
-        jsonResponse(res, 413, { ok: false, error: { code: "PAYLOAD_TOO_LARGE", message: "body too large" } });
+      if (
+        chunks.reduce((sum, part) => sum + part.length, 0) >
+        20 * 1024 * 1024
+      ) {
+        jsonResponse(res, 413, {
+          ok: false,
+          error: { code: "PAYLOAD_TOO_LARGE", message: "body too large" },
+        });
         return;
       }
     }
@@ -299,19 +348,31 @@ const server = createServer(async (req, res) => {
     const replay = {
       method: req.method,
       url: req.url,
-      headers: { ...req.headers, "x-dsh-documents": "1", origin: `http://127.0.0.1:${port}` },
+      headers: {
+        ...req.headers,
+        "x-dsh-documents": "1",
+        origin: `http://127.0.0.1:${port}`,
+      },
       async *[Symbol.asyncIterator]() {
         if (bodyText) yield Buffer.from(bodyText);
       },
     };
     await route.handler(replay, res);
   } catch (error) {
-    jsonResponse(res, 200, { ok: false, error: { code: "HARNESS_ERROR", message: String(error?.message ?? error) } });
+    jsonResponse(res, 200, {
+      ok: false,
+      error: {
+        code: "HARNESS_ERROR",
+        message: String(error?.message ?? error),
+      },
+    });
   }
 });
 
 server.listen(port, "127.0.0.1", () => {
-  console.log(`documents panel harness: http://127.0.0.1:${port}/ (document ${documentId})`);
+  console.log(
+    `documents panel harness: http://127.0.0.1:${port}/ (document ${documentId})`,
+  );
   console.log(`workspace: ${workspace}`);
 });
 

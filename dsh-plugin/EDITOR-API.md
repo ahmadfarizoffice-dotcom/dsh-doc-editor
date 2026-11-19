@@ -31,9 +31,20 @@ The single call the editor needs to start.
   "document": { "schemaVersion": "1.0.0", "...": "the full DocDocument model" },
   "blockPages": { "p1": 1, "p2": 1, "p3": 2 },
   "pageCount": 2,
-  "stats": { "words": 812, "characters": 5200, "paragraphs": 96, "tables": 3, "images": 2 },
+  "stats": {
+    "words": 812,
+    "characters": 5200,
+    "paragraphs": 96,
+    "tables": 3,
+    "images": 2
+  },
   "outline": [{ "level": 1, "text": "Introduction", "blockId": "p4" }],
-  "capabilities": { "ai": true, "formats": true, "convert": true, "renderer": true }
+  "capabilities": {
+    "ai": true,
+    "formats": true,
+    "convert": true,
+    "renderer": true
+  }
 }
 ```
 
@@ -49,7 +60,12 @@ side list; `/export` streams bytes).
 ### `GET /search?id=&q=&regex=&caseSensitive=`
 
 ```json
-{ "ok": true, "matches": [{ "blockId": "p12", "start": 4, "end": 11, "text": "budget", "page": 2 }] }
+{
+  "ok": true,
+  "matches": [
+    { "blockId": "p12", "start": 4, "end": 11, "text": "budget", "page": 2 }
+  ]
+}
 ```
 
 ## Writes
@@ -70,7 +86,10 @@ Response:
   "title": "Quarterly report",
   "stats": { "words": 813, "...": 0 },
   "pageCount": 2,
-  "result": { "paragraphIds": ["p3"], "": "raw engine result (small, op specific)" }
+  "result": {
+    "paragraphIds": ["p3"],
+    "": "raw engine result (small, op specific)"
+  }
 }
 ```
 
@@ -91,7 +110,12 @@ op it stops and returns `{ ok: false, applied, error }`; earlier ops stay applie
 ```
 
 ```json
-{ "ok": true, "path": "…/documents/<id>/document.docx", "bytes": 17421, "revision": 4 }
+{
+  "ok": true,
+  "path": "…/documents/<id>/document.docx",
+  "bytes": 17421,
+  "revision": 4
+}
 ```
 
 `POST /saveAs` accepts `{ id, path }` and writes the format implied by the
@@ -102,33 +126,33 @@ extension; `POST /create`, `POST /open`, `POST /delete` are unchanged.
 Positions are `{ blockId, offset }` (UTF-16 offset inside the paragraph text);
 ranges are `{ start, end }`. A missing `offset` means the start of the block.
 
-| op | args |
-|---|---|
-| `insertText` | `position`, `text`, `props?` |
-| `replaceText` | `range`, `text`, `props?` |
-| `deleteRange` | `range` |
-| `formatText` | `range`, `props`, `clear?` |
-| `formatParagraph` | `blockIds`, `props` |
-| `applyStyle` | `blockIds`, `styleId`, `clearDirectFormatting?` |
-| `insertHeading` | `text`, `level`, `afterBlockId?`, `styleId?` |
-| `insertList` | `items`, `kind`, `afterBlockId?`, `level?`, `startAt?` |
-| `insertTable` | `rows`, `columns`, `data?`, `style?`, `afterBlockId?`, `headerRow?` |
-| `editTable` | `tableId`, `operation`, `index?`, `region?`, `cellId?` |
-| `insertImage` | `position`, `path?` or `dataBase64`, `contentType?`, `width?`, `height?`, `alt?`, `floating?` |
-| `insertHyperlink` | `range`, `href?`, `anchor?`, `tooltip?` |
-| `insertPageBreak` | `position`, `kind?` |
-| `insertSectionBreak` | `sectionIndex?`, `blockIndex?`, `type?`, `landscape?` |
-| `insertFootnote` | `position`, `text`, `type?` |
-| `insertToc` | `afterBlockId?`, `minLevel?`, `maxLevel?`, `includeTitle?` |
-| `insertEquation` | `position`, `linear`, `display?` |
-| `setPageLayout` | `sectionIndex`, `pageSize?`, `orientation?`, `margins?` |
-| `setColumns` | `sectionIndex`, `count`, `space?` |
-| `editHeaderFooter` | `sectionIndex?`, `variant?`, `part` (`header`/`footer`), `text` |
-| `addComment` | `range`, `text`, `author?` |
-| `setMetadata` | `patch` (title/subject/keywords/creator) |
-| `trackChanges` | `enabled` |
-| `acceptChanges` / `rejectChanges` | `revisionId?` |
-| `undo` / `redo` | — |
+| op                                | args                                                                                          |
+| --------------------------------- | --------------------------------------------------------------------------------------------- |
+| `insertText`                      | `position`, `text`, `props?`                                                                  |
+| `replaceText`                     | `range`, `text`, `props?`                                                                     |
+| `deleteRange`                     | `range`                                                                                       |
+| `formatText`                      | `range`, `props`, `clear?`                                                                    |
+| `formatParagraph`                 | `blockIds`, `props`                                                                           |
+| `applyStyle`                      | `blockIds`, `styleId`, `clearDirectFormatting?`                                               |
+| `insertHeading`                   | `text`, `level`, `afterBlockId?`, `styleId?`                                                  |
+| `insertList`                      | `items`, `kind`, `afterBlockId?`, `level?`, `startAt?`                                        |
+| `insertTable`                     | `rows`, `columns`, `data?`, `style?`, `afterBlockId?`, `headerRow?`                           |
+| `editTable`                       | `tableId`, `operation`, `index?`, `region?`, `cellId?`                                        |
+| `insertImage`                     | `position`, `path?` or `dataBase64`, `contentType?`, `width?`, `height?`, `alt?`, `floating?` |
+| `insertHyperlink`                 | `range`, `href?`, `anchor?`, `tooltip?`                                                       |
+| `insertPageBreak`                 | `position`, `kind?`                                                                           |
+| `insertSectionBreak`              | `sectionIndex?`, `blockIndex?`, `type?`, `landscape?`                                         |
+| `insertFootnote`                  | `position`, `text`, `type?`                                                                   |
+| `insertToc`                       | `afterBlockId?`, `minLevel?`, `maxLevel?`, `includeTitle?`                                    |
+| `insertEquation`                  | `position`, `linear`, `display?`                                                              |
+| `setPageLayout`                   | `sectionIndex`, `pageSize?`, `orientation?`, `margins?`                                       |
+| `setColumns`                      | `sectionIndex`, `count`, `space?`                                                             |
+| `editHeaderFooter`                | `sectionIndex?`, `variant?`, `part` (`header`/`footer`), `text`                               |
+| `addComment`                      | `range`, `text`, `author?`                                                                    |
+| `setMetadata`                     | `patch` (title/subject/keywords/creator)                                                      |
+| `trackChanges`                    | `enabled`                                                                                     |
+| `acceptChanges` / `rejectChanges` | `revisionId?`                                                                                 |
+| `undo` / `redo`                   | —                                                                                             |
 
 `undo` and `redo` return `{ ok: true, document }` (the full model) because the
 caret and page map must be rebuilt; every other op returns the envelope above.
