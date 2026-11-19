@@ -37,7 +37,24 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const MAX_BODY = "25mb";
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-const ALLOWED_UPLOAD_EXTENSIONS = new Set([".docx", ".dotx", ".docm"]);
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([
+  ".docx",
+  ".dotx",
+  ".docm",
+  ".doc",
+  ".dot",
+  ".odt",
+  ".ott",
+  ".rtf",
+  ".html",
+  ".htm",
+  ".xhtml",
+  ".md",
+  ".markdown",
+  ".txt",
+  ".pages",
+  ".gdoc",
+]);
 
 const EXPORT_CONTENT_TYPES: Record<string, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -374,16 +391,43 @@ export async function createServer(
           "Attach the document as multipart field “file”",
         );
       }
-      if (!contract.importDocx) {
+      if (!contract.importAny && !contract.importDocx) {
         throw new HttpError(
           501,
-          "DOCX_IMPORT_UNAVAILABLE",
-          "The server cannot import DOCX because the core OOXML adapter is not loadable. Build packages/core to enable import.",
+          "IMPORT_UNAVAILABLE",
+          "The server cannot import documents because neither the format adapters nor the OOXML adapter are loadable. Build packages/core to enable import.",
         );
       }
-      const imported = await contract.importDocx(file.buffer, {
-        fileName: file.originalname,
-      });
+      let imported: Awaited<ReturnType<NonNullable<typeof contract.importAny>>>;
+      try {
+        imported =
+          contract.importAny !== null
+            ? await contract.importAny(file.buffer, file.originalname)
+            : await contract.importDocx!(file.buffer, {
+                fileName: file.originalname,
+              });
+      } catch (error) {
+        const code =
+          error && typeof error === "object" && "code" in error
+            ? String((error as { code?: unknown }).code)
+            : "";
+        if (code.startsWith("FORMAT_")) {
+          const status =
+            code === "FORMAT_EXTERNAL_REQUIRED"
+              ? 422
+              : code === "FORMAT_TOO_LARGE"
+                ? 413
+                : 415;
+          throw new HttpError(
+            status,
+            code,
+            error instanceof Error
+              ? error.message
+              : "The document could not be imported.",
+          );
+        }
+        throw error;
+      }
       const shape = validateDocumentShape(imported.document);
       if (!shape.ok) {
         throw new HttpError(

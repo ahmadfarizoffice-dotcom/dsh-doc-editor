@@ -244,6 +244,11 @@ export function readActiveFormatting(
     smallCaps: true,
   };
   let sawText = false;
+  let valuesSeen = false;
+  let commonFontFamily: string | undefined;
+  let commonFontSize: number | undefined;
+  let commonColor: string | undefined;
+  let commonHighlight: string | undefined;
   for (const target of targets) {
     const text = paragraphText(target.paragraph);
     const from = Math.min(target.from, text.length);
@@ -274,15 +279,31 @@ export function readActiveFormatting(
         if (!truthy(resolved[key]))
           (run as Record<string, unknown>)[key] = false;
       }
-      if (!resolved.color) run.color = undefined;
-      else if (run.color === undefined) run.color = resolved.color;
-      else if (run.color !== resolved.color) run.color = undefined;
+      // Non-toggle run properties are reported only when every selected run
+      // agrees, so the toolbar shows a blank/mixed value instead of guessing.
+      if (!valuesSeen) {
+        valuesSeen = true;
+        commonFontFamily = resolved.fontFamily;
+        commonFontSize = resolved.fontSize;
+        commonColor = resolved.color;
+        commonHighlight = resolved.highlight;
+      } else {
+        if (commonFontFamily !== resolved.fontFamily)
+          commonFontFamily = undefined;
+        if (commonFontSize !== resolved.fontSize) commonFontSize = undefined;
+        if (commonColor !== resolved.color) commonColor = undefined;
+        if (commonHighlight !== resolved.highlight) commonHighlight = undefined;
+      }
     }
   }
   if (!sawText) {
     for (const key of TOGGLE_KEYS)
       (run as Record<string, unknown>)[key] = false;
   }
+  if (commonFontFamily !== undefined) run.fontFamily = commonFontFamily;
+  if (commonFontSize !== undefined) run.fontSize = commonFontSize;
+  if (commonColor !== undefined) run.color = commonColor;
+  if (commonHighlight !== undefined) run.highlight = commonHighlight;
   return {
     run,
     paragraph,

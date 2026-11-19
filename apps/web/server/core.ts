@@ -12,7 +12,8 @@ import { pathToFileURL } from "node:url";
 import { findRepositoryRoot } from "./workspace.js";
 
 export type CoreApi = Record<string, unknown>;
-export type CoreSubmodule = "model" | "docx" | "convert" | "render" | "ai";
+export type CoreSubmodule =
+  "model" | "docx" | "formats" | "convert" | "render" | "ai";
 
 export interface CoreBundle {
   root: string;
@@ -34,6 +35,7 @@ export interface CoreBundle {
 const SUBMODULES: CoreSubmodule[] = [
   "model",
   "docx",
+  "formats",
   "convert",
   "render",
   "ai",
@@ -283,6 +285,17 @@ export interface ModuleContract {
         options?: unknown,
       ) => Promise<{ buffer: Uint8Array; warnings?: string[] }>)
     | null;
+  importAny:
+    | ((
+        bytes: Uint8Array,
+        fileName?: string,
+      ) => Promise<{
+        document: unknown;
+        report?: unknown;
+        warnings?: string[];
+        losses?: unknown[];
+      }>)
+    | null;
   importDocx:
     | ((
         bytes: Uint8Array,
@@ -320,6 +333,9 @@ export function contractOf(bundle: CoreBundle): ModuleContract {
     importDocx: pickFunction(bundle.modules.docx, [
       "importDocx",
     ]) as ModuleContract["importDocx"],
+    importAny: pickFunction(bundle.modules.formats, [
+      "importAny",
+    ]) as ModuleContract["importAny"],
     convertExport: pickFunction(bundle.modules.convert, [
       "convertToBuffer",
       "convert",

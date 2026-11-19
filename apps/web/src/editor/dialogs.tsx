@@ -4,9 +4,16 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { findParagraph, textOffsetToPosition } from "@dsh-doc/core/model";
+import {
+  PAGE_PRESETS,
+  findParagraph,
+  setPageSetup,
+  textOffsetToPosition,
+} from "@dsh-doc/core/model";
+import type { PageSetup } from "@dsh-doc/core/model";
 import type { ReactNode } from "react";
 import type { AppStore } from "../app/state";
+import { sectionIndexForPosition } from "../model/sections";
 import {
   applyLinkAt,
   findMatches,
@@ -401,6 +408,242 @@ export function SectionBreakDialog({
         />
         New section uses landscape orientation
       </label>
+    </DialogShell>
+  );
+}
+
+/* -------------------------------------------------------------- page setup */
+
+const PAGE_SIZE_OPTIONS: Array<{ value: string; label: string }> = [
+  ...Object.keys(PAGE_PRESETS).map((key) => ({
+    value: key,
+    label: PAGE_PRESETS[key]?.label ?? key,
+  })),
+  { value: "custom", label: "Custom size" },
+];
+
+function presetForPage(page: PageSetup): string {
+  for (const [key, preset] of Object.entries(PAGE_PRESETS)) {
+    const samePortrait =
+      Math.abs(page.width - preset.width) < 0.75 &&
+      Math.abs(page.height - preset.height) < 0.75;
+    const sameLandscape =
+      Math.abs(page.width - preset.height) < 0.75 &&
+      Math.abs(page.height - preset.width) < 0.75;
+    if (samePortrait || sameLandscape) return key;
+  }
+  return "custom";
+}
+
+const PT_PER_INCH = 72;
+const toInches = (points: number): number =>
+  Math.round((points / PT_PER_INCH) * 100) / 100;
+const toPoints = (inches: number): number =>
+  Math.round(inches * PT_PER_INCH * 100) / 100;
+
+/**
+ * Real page setup: edits the selected section's `PageSetup` through the core
+ * model operation. This is not a skin-only stub; it changes document geometry,
+ * which the editor surface and preview both read.
+ */
+export function PageSetupDialog({
+  store,
+  onClose,
+}: DialogProps): React.JSX.Element {
+  const snapshot = store.getSnapshot();
+  const sectionIndex = sectionIndexForPosition(
+    snapshot.document,
+    store.selection.focus,
+  );
+  const section =
+    snapshot.document.sections[sectionIndex] ?? snapshot.document.sections[0];
+  const page = section?.page;
+  const [preset, setPreset] = useState(() =>
+    page ? presetForPage(page) : "A4",
+  );
+  const [width, setWidth] = useState(page?.width ?? 595.3);
+  const [height, setHeight] = useState(page?.height ?? 841.9);
+  const [orientation, setOrientation] = useState<"portrait" | "landscape">(
+    page?.orientation ?? "portrait",
+  );
+  const [margins, setMargins] = useState(() => ({
+    top: toInches(page?.margins.top ?? 72),
+    right: toInches(page?.margins.right ?? 72),
+    bottom: toInches(page?.margins.bottom ?? 72),
+    left: toInches(page?.margins.left ?? 72),
+  }));
+
+  if (!page) {
+    return (
+      <DialogShell
+        title="Page setup"
+        onClose={onClose}
+        footer={
+          <button type="button" className="button primary" onClick={onClose}>
+            Close
+          </button>
+        }
+      >
+        <p className="notice notice-warning">
+          This document has no sections, so no page geometry can be edited.
+        </p>
+      </DialogShell>
+    );
+  }
+
+  const choosePreset = (value: string): void => {
+    setPreset(value);
+    const chosen = PAGE_PRESETS[value];
+    if (!chosen) return;
+    if (orientation === "landscape") {
+      setWidth(Math.max(chosen.width, chosen.height));
+      setHeight(Math.min(chosen.width, chosen.height));
+    } else {
+      setWidth(Math.min(chosen.width, chosen.height));
+      setHeight(Math.max(chosen.width, chosen.height));
+    }
+  };
+
+  const chooseOrientation = (value: "portrait" | "landscape"): void => {
+    setOrientation(value);
+    const shouldSwap =
+      (value === "landscape" && width < height) ||
+      (value === "portrait" && width > height);
+    if (shouldSwap) {
+      setWidth(height);
+      setHeight(width);
+    }
+  };
+
+  const submit = (): void => {
+    let nextWidth = width;
+    let nextHeight = height;
+    if (orientation === "landscape" && nextWidth < nextHeight) {
+      nextWidth = height;
+      nextHeight = width;
+    }
+    if (orientation === "portrait" && nextWidth > nextHeight) {
+      nextWidth = height;
+      nextHeight = width;
+    }
+    const safeMargins = {
+      top: Math.max(0, toPoints(margins.top)),
+      right: Math.max(0, toPoints(margins.right)),
+      bottom: Math.max(0, toPoints(margins.bottom)),
+      left: Math.max(0, toPoints(margins.left)),
+    };
+    const ok = store.apply("Page setup", (document) => {
+      setPageSetup(document, sectionIndex, {
+        width: Math.max(72, nextWidth),
+        height: Math.max(72, nextHeight),
+        orientation,
+        preset: preset === "custom" ? "custom" : preset,
+        margins: { ...page.margins, ...safeMargins },
+      });
+    });
+    if (ok) store.toast("Page setup applied to this section", "success");
+    onClose();
+  };
+
+  return (
+    <DialogShell
+      title="Page setup"
+      description={`Applies to section ${sectionIndex + 1} of ${snapshot.document.sections.length} (the section containing the caret).`}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="button secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="button primary" onClick={submit}>
+            Apply
+          </button>
+        </>
+      }
+    >
+      <div className="form-row">
+        <label htmlFor="page-size">Paper size</label>
+        <select
+          id="page-size"
+          value={preset}
+          onChange={(event) => choosePreset(event.target.value)}
+        >
+          {PAGE_SIZE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {preset === "custom" ? (
+        <div className="form-grid">
+          <div className="form-row">
+            <label htmlFor="page-width">Width (pt)</label>
+            <input
+              id="page-width"
+              type="number"
+              min={72}
+              step={1}
+              value={Math.round(width)}
+              onChange={(event) =>
+                setWidth(Math.max(72, Number(event.target.value) || width))
+              }
+            />
+          </div>
+          <div className="form-row">
+            <label htmlFor="page-height">Height (pt)</label>
+            <input
+              id="page-height"
+              type="number"
+              min={72}
+              step={1}
+              value={Math.round(height)}
+              onChange={(event) =>
+                setHeight(Math.max(72, Number(event.target.value) || height))
+              }
+            />
+          </div>
+        </div>
+      ) : null}
+      <div className="form-row">
+        <label htmlFor="page-orientation">Orientation</label>
+        <select
+          id="page-orientation"
+          value={orientation}
+          onChange={(event) =>
+            chooseOrientation(event.target.value as "portrait" | "landscape")
+          }
+        >
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+        </select>
+      </div>
+      <div className="form-grid">
+        {(["top", "bottom", "left", "right"] as const).map((side) => (
+          <div className="form-row" key={side}>
+            <label htmlFor={`margin-${side}`}>Margin {side} (in)</label>
+            <input
+              id={`margin-${side}`}
+              type="number"
+              min={0}
+              max={4}
+              step={0.1}
+              value={margins[side]}
+              onChange={(event) =>
+                setMargins((current) => ({
+                  ...current,
+                  [side]: Math.max(0, Number(event.target.value) || 0),
+                }))
+              }
+            />
+          </div>
+        ))}
+      </div>
+      <p className="hint">
+        Page geometry is stored in points in the document model. The paper size
+        changes the section's actual width and height; margins are converted
+        from inches.
+      </p>
     </DialogShell>
   );
 }

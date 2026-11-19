@@ -43,6 +43,7 @@ export type DialogState =
   | { kind: "section-break" }
   | { kind: "toc" }
   | { kind: "find" }
+  | { kind: "page-setup" }
   | { kind: "files" }
   | { kind: "recovery"; snapshot: RecoverySnapshot }
   | { kind: "shortcuts" };
