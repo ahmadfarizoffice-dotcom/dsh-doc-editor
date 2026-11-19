@@ -97,6 +97,19 @@ const evaluate = async (client, expression) => {
   return result.result.value;
 };
 
+/** Real key events go through the browser input pipeline, so React handlers see them. */
+const pressKey = async (client, key, code, keyCode) => {
+  const base = {
+    key,
+    code,
+    windowsVirtualKeyCode: keyCode,
+    nativeVirtualKeyCode: keyCode,
+  };
+  await client.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...base });
+  await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...base });
+};
+const pressEscape = (client) => pressKey(client, "Escape", "Escape", 27);
+
 try {
   if (!(await waitForDevtools())) throw new Error("Chrome did not start");
   const target = await fetch(
@@ -135,18 +148,29 @@ try {
       `(() => {
         const ribbon = document.querySelector('.dx-ribbon');
         const backstage = document.querySelector('.dx-backstage');
+        const dialog = document.querySelector('.dx-dialog');
         const tab = document.querySelector('[role="tab"][aria-selected="true"]');
         const title = document.querySelector('.dx-title');
         const chip = document.querySelector('.dx-chip');
         const sessionChip = document.querySelector('.dx-session-text');
         const heading = document.querySelector('.dx-backstage h3');
         const rows = [...document.querySelectorAll('.dx-browse-item')].map((node) => node.getAttribute('aria-label'));
+        let dialogTopmost = null;
+        if (dialog) {
+          const rect = dialog.getBoundingClientRect();
+          const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + 24);
+          dialogTopmost = Boolean(hit && hit.closest('.dx-dialog'));
+        }
+        const active = document.activeElement;
         return {
           ribbonHeight: ribbon ? Math.round(ribbon.getBoundingClientRect().height * 100) / 100 : null,
           expected: Math.round((window.innerHeight / 16) * 100) / 100,
           tab: tab ? tab.textContent.trim() : null,
           backstageOpen: Boolean(backstage),
           backstageHeading: heading ? heading.textContent : null,
+          dialogOpen: Boolean(dialog),
+          dialogTopmost,
+          focusedId: active ? active.id || active.tagName.toLowerCase() : null,
           title: title ? title.value : null,
           chip: chip ? chip.textContent.trim() : null,
           sessionChip: sessionChip ? sessionChip.textContent.trim() : null,
@@ -163,6 +187,26 @@ try {
     step: "click File",
     ...(await clickByLabel("File")),
     after: (await sleep(250), await state()),
+  });
+  report.steps.push({
+    step: "click Save as (dialog from the backstage)",
+    ...(await clickByLabel("Save as")),
+    after: (await sleep(450), await state()),
+  });
+  await pressEscape(client);
+  report.steps.push({
+    step: "Escape closes the dialog and keeps the backstage",
+    after: (await sleep(350), await state()),
+  });
+  await evaluate(
+    client,
+    `(() => { const tab = document.getElementById('dx-tab-file'); if (tab) { tab.focus(); tab.click(); } return true; })()`,
+  );
+  await sleep(250);
+  await pressEscape(client);
+  report.steps.push({
+    step: "Escape on the File tab closes the backstage and restores focus",
+    after: (await sleep(350), await state()),
   });
   report.steps.push({
     step: "click Choose folder",
