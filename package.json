@@ -26,10 +26,14 @@
     "coverage": "vitest run --coverage",
     "fixture:inspect": "node tools/fixture-report.mjs",
     "fixture:extend": "node tools/extend-fixture.mjs",
+    "build:plugin": "node tools/build-dsh-plugin.mjs",
+    "plugin:check": "node tools/check-dsh-plugin.mjs",
     "mcp:start": "node apps/mcp/dist/main.js",
     "web:dev": "pnpm --filter @dsh-doc/web run dev",
     "web:start": "node apps/web/dist-server/server.js",
-    "cli": "node apps/cli/dist/main.js"
+    "cli": "node apps/cli/dist/main.js",
+    "integrations:check": "node tools/check-integrations.mjs",
+    "plugin:build": "node tools/build-dsh-plugin.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

@@ -59,6 +59,9 @@ import {
   setTrackChanges,
 } from "../model/review.js";
 import { mkdir as fsMkdir, writeFile as fsWriteFile } from "node:fs/promises";
+import * as formatRegistry from "../formats/index.js";
+import * as convertEngine from "../convert/index.js";
+import * as aiAssistant from "../ai/index.js";
 import { resolveParagraphProps } from "../model/styles.js";
 import { computeNumbering } from "../model/numbering.js";
 import {
@@ -340,12 +343,8 @@ export class DocumentService {
     });
     const layout = this.layout(session);
     if (filePath) {
-      await import("node:fs/promises").then((fs) =>
-        fs.mkdir(path.dirname(target), { recursive: true }),
-      );
-      await import("node:fs/promises").then((fs) =>
-        fs.writeFile(target, exported.buffer),
-      );
+      await fsMkdir(path.dirname(target), { recursive: true });
+      await fsWriteFile(target, exported.buffer);
     }
     await this.workspace.saveDocument(
       documentId,
@@ -393,12 +392,8 @@ export class DocumentService {
         `No exporter is available for .${extension}`,
       );
     const result = await formats.exportAny(session.document, extension);
-    await import("node:fs/promises").then((fs) =>
-      fs.mkdir(path.dirname(target), { recursive: true }),
-    );
-    await import("node:fs/promises").then((fs) =>
-      fs.writeFile(target, result.buffer),
-    );
+    await fsMkdir(path.dirname(target), { recursive: true });
+    await fsWriteFile(target, result.buffer);
     await this.workspace.audit({
       action: "document_save_as",
       documentId,
@@ -1437,12 +1432,8 @@ export class DocumentService {
     const result = await convert.convert(document, { to: input.to });
     if (input.outputPath) {
       const target = this.workspace.resolveWritePath(input.outputPath);
-      await import("node:fs/promises").then((fs) =>
-        fs.mkdir(path.dirname(target), { recursive: true }),
-      );
-      await import("node:fs/promises").then((fs) =>
-        fs.writeFile(target, result.buffer),
-      );
+      await fsMkdir(path.dirname(target), { recursive: true });
+      await fsWriteFile(target, result.buffer);
     }
     await this.workspace.audit({
       action: "document_convert",
@@ -1481,12 +1472,8 @@ export class DocumentService {
     });
     if (outputPath) {
       const target = this.workspace.resolveWritePath(outputPath);
-      await import("node:fs/promises").then((fs) =>
-        fs.mkdir(path.dirname(target), { recursive: true }),
-      );
-      await import("node:fs/promises").then((fs) =>
-        fs.writeFile(target, buffer),
-      );
+      await fsMkdir(path.dirname(target), { recursive: true });
+      await fsWriteFile(target, buffer);
       await this.workspace.audit({
         action: "document_export_pdf",
         documentId,
@@ -1524,12 +1511,8 @@ export class DocumentService {
       });
       if (outputPath) {
         const target = this.workspace.resolveWritePath(outputPath);
-        await import("node:fs/promises").then((fs) =>
-          fs.mkdir(path.dirname(target), { recursive: true }),
-        );
-        await import("node:fs/promises").then((fs) =>
-          fs.writeFile(target, exported.buffer),
-        );
+        await fsMkdir(path.dirname(target), { recursive: true });
+        await fsWriteFile(target, exported.buffer);
         return {
           format: normalized,
           bytes: exported.buffer.byteLength,
@@ -1554,12 +1537,8 @@ export class DocumentService {
     const result = await formats.exportAny(session.document, normalized);
     if (outputPath) {
       const target = this.workspace.resolveWritePath(outputPath);
-      await import("node:fs/promises").then((fs) =>
-        fs.mkdir(path.dirname(target), { recursive: true }),
-      );
-      await import("node:fs/promises").then((fs) =>
-        fs.writeFile(target, result.buffer),
-      );
+      await fsMkdir(path.dirname(target), { recursive: true });
+      await fsWriteFile(target, result.buffer);
       return {
         format: normalized,
         bytes: result.buffer.byteLength,
@@ -1577,52 +1556,36 @@ export class DocumentService {
   }
 
   async listFormats(): Promise<unknown> {
-    const base = {
-      import: [
-        "docx",
-        "dotx",
-        "docm",
-        "doc",
-        "odt",
-        "ott",
-        "rtf",
-        "html",
-        "htm",
-        "md",
-        "markdown",
-        "txt",
-        "xlsx",
-        "xls",
-        "pptx",
-        "ppt",
-        "pdf",
-      ],
-      export: [
-        "docx",
-        "dotx",
-        "docm",
-        "pdf",
-        "html",
-        "md",
-        "txt",
-        "odt",
-        "rtf",
-      ],
-      pdfImport: false,
-    };
     const formats = await this.tryFormats();
     if (!formats) {
       return {
-        ...base,
+        import: ["docx", "dotx", "docm"],
+        export: ["docx", "dotx", "docm", "pdf"],
+        pdfImport: false,
         availability: "core-only",
         note: "Only DOCX and PDF are implemented in this build",
         formats: [],
       };
     }
+    const rows = formats.availableFormats();
+    const importExtensions = [
+      ...new Set(
+        rows.filter((row) => row.canImport).flatMap((row) => row.extensions),
+      ),
+    ];
+    // PDF has no adapter: export is rendered from the layout engine.
+    const exportExtensions = [
+      ...new Set([
+        ...rows.filter((row) => row.canExport).flatMap((row) => row.extensions),
+        "pdf",
+      ]),
+    ];
     return {
-      ...base,
+      import: importExtensions,
+      export: exportExtensions,
+      pdfImport: false,
       availability: "full",
-      formats: formats.availableFormats?.() ?? [],
+      formats: rows,
     };
   }
 
@@ -1701,106 +1664,31 @@ export class DocumentService {
 
   /* ------------------------------------------------------- optional deps */
 
-  private async tryFormats(): Promise<
-    | {
-        importAny: (
-          bytes: Buffer,
-          fileName?: string,
-        ) => Promise<{
-          document: DocDocument;
-          warnings: string[];
-          losses: unknown[];
-        }>;
-        exportAny: (
-          doc: DocDocument,
-          format: string,
-          options?: Record<string, unknown>,
-        ) => Promise<{ buffer: Buffer; losses?: unknown[] }>;
-        availableFormats?: () => unknown;
-      }
-    | undefined
-  > {
-    try {
-      // Optional module: resolved dynamically so a build without the format
-      // adapters still works and reports an explicit unavailable capability.
-      const specifier = "../formats/index.js";
-      const module = (await import(specifier)) as unknown as {
-        importAny?: (
-          bytes: Buffer,
-          fileName?: string,
-        ) => Promise<{
-          document: DocDocument;
-          warnings: string[];
-          losses: unknown[];
-        }>;
-        exportAny?: (
-          doc: DocDocument,
-          format: string,
-          options?: Record<string, unknown>,
-        ) => Promise<{ buffer: Buffer; losses?: unknown[] }>;
-        availableFormats?: () => unknown;
-      };
-      if (!module.importAny || !module.exportAny) return undefined;
-      return {
-        importAny: module.importAny,
-        exportAny: module.exportAny,
-        availableFormats: module.availableFormats,
-      };
-    } catch {
-      return undefined;
-    }
+  private async tryFormats(): Promise<typeof formatRegistry> {
+    return formatRegistry;
   }
 
-  private async tryConvert(): Promise<
-    | {
-        convert: (
-          doc: DocDocument,
-          options: { to: string },
-        ) => Promise<{ buffer: Buffer; losses: unknown[]; warnings: string[] }>;
-      }
-    | undefined
-  > {
-    try {
-      const specifier = "../convert/index.js";
-      const module = (await import(specifier)) as unknown as {
-        convert?: (
-          input: DocDocument,
-          options: { from: string; to: string },
-        ) => Promise<{ buffer: Buffer; losses: unknown[]; warnings: string[] }>;
-      };
-      if (!module.convert) return undefined;
-      const convertFn = module.convert;
-      return {
-        convert: (doc, options) =>
-          convertFn(doc, { from: "model", to: options.to }),
-      };
-    } catch {
-      return undefined;
-    }
+  private async tryConvert(): Promise<{
+    convert: (
+      doc: DocDocument,
+      options: { to: string },
+    ) => Promise<{ buffer: Buffer; losses: unknown[]; warnings: string[] }>;
+  }> {
+    return {
+      convert: (doc, options) =>
+        convertEngine.convert(doc, {
+          from: "model",
+          to: options.to,
+        }) as Promise<{
+          buffer: Buffer;
+          losses: unknown[];
+          warnings: string[];
+        }>,
+    };
   }
 
-  private async tryAi(): Promise<
-    | {
-        runAssistantOperation: (
-          operation: string,
-          input: Record<string, unknown>,
-        ) => Promise<unknown>;
-      }
-    | undefined
-  > {
-    try {
-      const specifier = "../ai/index.js";
-      const module = (await import(specifier)) as unknown as {
-        runAssistantOperation?: (
-          operation: string,
-          input: Record<string, unknown>,
-        ) => Promise<unknown>;
-      };
-      if (!module.runAssistantOperation) return undefined;
-      return { runAssistantOperation: module.runAssistantOperation };
-    } catch {
-      return undefined;
-    }
+  private async tryAi(): Promise<typeof aiAssistant> {
+    return aiAssistant;
   }
 }
 
