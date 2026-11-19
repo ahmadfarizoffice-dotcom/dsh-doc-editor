@@ -90,8 +90,16 @@ bundle from [`dsh-plugin/`](dsh-plugin) and it is published at:
 
 The published bundle is self-contained (`engine.js` inlines this engine), has no
 dependencies and no install scripts. Verified on DSH **0.2.2-rc.3**: installing
-it applies immediately under HMR, registers **17 `document_*` tools**, and adds
-a **Documents** panel in the main column.
+it applies immediately under HMR, registers **26 `document_*` tools**, and adds a
+**Documents** panel — a Word-like editor with the seven ribbon tabs (File, Home,
+Insert, Design, Layout, References, View), an editable page, tables, images,
+comments-free review tools, layout controls and save/export — in the main
+column.
+
+The panel is a client module, so after installing or updating the bundle reload
+the Harness page; if the panel still shows the previous version, restart the
+runtime once. A new document created from the panel lives in
+`$DSH_DOC_WORKSPACE` (or `~/.dsh-documents`).
 
 ### Route A — the DSH UI
 

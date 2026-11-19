@@ -166,11 +166,26 @@ rules from the brief — **✅**. Capabilities that need a language model
 (extractive) and mechanical review work offline. The assistant never applies
 changes itself and never replaces HTML.
 
-## 8. MCP server
+## 8. MCP server and Harness plugin
 
-50 tools, 8 resources, 8 prompts, typed zod schemas, JSON Schema manifest,
-workspace confinement, read-only mode, audit logging, destructive-operation
-annotations — **✅** (see [MCP.md](MCP.md)).
+**MCP server:** 50 tools, 8 resources, 8 prompts, typed zod schemas, JSON Schema
+manifest, workspace confinement, read-only mode, audit logging,
+destructive-operation annotations — **✅** (see [MCP.md](MCP.md)).
+
+**DeepSeek Harness plugin:** a self-contained bundle whose Documents panel is a
+real editor, not a preview — **✅**. It renders a seven-tab Word-style ribbon
+(**File, Home, Insert, Design, Layout, References, View**) with Word's grouped
+commands, and an editable page where clicking, typing, Enter/Backspace,
+selection formatting, tables with editable cells, images, breaks, hyperlinks,
+header/footer text, TOC, footnotes, equations, margins/orientation/size/columns,
+zoom, ruler, formatting marks, undo/redo, save and export all work through the
+same engine and the 27-operation Host API. Character formatting with a collapsed
+caret applies to the current paragraph (Word behaviour). Edits are applied
+locally first and synced to the Host, so the caret never jumps; structural
+changes refetch the page map. Unsupported Word features (page colour, shapes,
+symbols, captions, cross-references, page-number fields in headers/footers) are
+disabled with a stated reason. Installing from a GitHub link is the only setup
+step; see [INSTALL.md](INSTALL.md).
 
 ## 9. Agent tools and skills
 

@@ -1223,6 +1223,39 @@ export class DocumentService {
     return this.afterMutation(session, "document_layout", { sectionIndex });
   }
 
+  /**
+   * Renames a document and updates its descriptive metadata (editor panel).
+   *
+   * Only the user-facing properties are accepted: `title`, `subject`,
+   * `keywords`, `creator`, `category` and `description`. Unknown keys and
+   * values of the wrong type are ignored, so the engine keeps owning
+   * timestamps, revision counters and application properties.
+   */
+  setDocumentMetadata(
+    documentId: string,
+    patch: Partial<DocDocument["metadata"]>,
+  ): unknown {
+    const session = this.session(documentId);
+    const source = (patch ?? {}) as Partial<DocDocument["metadata"]>;
+    const clean: Partial<DocDocument["metadata"]> = {};
+    if (typeof source.title === "string") clean.title = source.title;
+    if (typeof source.subject === "string") clean.subject = source.subject;
+    if (typeof source.creator === "string") clean.creator = source.creator;
+    if (typeof source.category === "string") clean.category = source.category;
+    if (typeof source.description === "string")
+      clean.description = source.description;
+    if (Array.isArray(source.keywords)) {
+      clean.keywords = source.keywords.filter(
+        (keyword): keyword is string => typeof keyword === "string",
+      );
+    }
+    const changed = Object.keys(clean);
+    if (changed.length === 0) return { changed };
+    setMetadata(session.document, clean);
+    // Audit detail records which fields changed, never their content.
+    return this.afterMutation(session, "document_set_metadata", { changed });
+  }
+
   /* ------------------------------------------------------------- review */
 
   addComment(

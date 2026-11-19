@@ -15,7 +15,7 @@ export {
   buildToolManifest,
 } from "./tools/registry.js";
 export { reviewDocument, providerStatus } from "./ai/assistant.js";
-export { createDocument } from "./model/create.js";
+export { createDocument, PAGE_PRESETS } from "./model/create.js";
 export { documentStats, documentText } from "./model/text.js";
 export { documentOutline, searchDocument } from "./model/query.js";
 export {

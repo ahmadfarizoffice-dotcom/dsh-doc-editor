@@ -94,12 +94,19 @@ https://github.com/ahmadfarizoffice-dotcom/dsh-doc-editor-plugin
 ```
 
 The bundle is self-contained (the engine is inlined, no dependencies, no install
-scripts) and adds a **Documents** panel in the main column plus 17
-`document_*` tools. Agent equivalent:
+scripts) and adds a **Documents panel** — a real Word-like editor with the seven
+tabs **File · Home · Insert · Design · Layout · References · View**, an editable
+page, and 26 `document_*` tools. Agent equivalent:
 
 ```text
 plugin_manager action: install_bundle target: github:ahmadfarizoffice-dotcom/dsh-doc-editor-plugin
 ```
+
+![Documents panel inside DeepSeek Harness](docs/screenshots/dsh-panel-editor.png)
+
+After installing or updating the bundle, reload the Harness page (and restart
+the runtime if the panel still shows the previous version) so the browser loads
+the new client module.
 
 Source: [`dsh-plugin/`](dsh-plugin) in this repository; published from
 [dsh-doc-editor-plugin](https://github.com/ahmadfarizoffice-dotcom/dsh-doc-editor-plugin).
