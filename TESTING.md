@@ -36,7 +36,7 @@ Linux with Node 22):
 | `node tools/validate-mcp-schemas.mjs`                         | OK — 50 tools, 8 resources, 8 prompts                                                                  |
 | `node tools/build-dsh-plugin.mjs`                             | 3.97 MiB single-file engine, 50 tools, PDF smoke pass                                                  |
 | `node tools/check-dsh-plugin.mjs`                             | OK — manifest, 14 files, 26 tools, locale/icon/detail checks                                           |
-| `node --test dsh-plugin/test/*.mjs`                           | **92 tests passed** (host API, browse/workspace, late Web server, ribbon, logic, panel)                |
+| `node --test dsh-plugin/test/*.mjs`                           | **102 tests passed** (host API, browse/workspace, late Web server, ribbon, logic, panel)               |
 | `node tools/measure-ribbon.mjs`                               | ribbon height 50.31 px on all 7 tabs at 805 px viewport (= 1/16)                                       |
 | `node tools/probe-panel.mjs`                                  | File backstage opens without changing height; folder open → title, workspace and chat session prepared |
 | `node tools/check-integrations.mjs`                           | OK — Claude plugin (12 skills, 3 commands), Codex, Antigravity, OpenCode                               |
