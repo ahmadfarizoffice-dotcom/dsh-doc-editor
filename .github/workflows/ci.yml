@@ -144,6 +144,14 @@ jobs:
           fi
           echo "build artifacts present: apps/web/dist-client/index.html, apps/mcp/dist/main.js"
 
+      - name: Build and validate the DSH bundle
+        run: |
+          pnpm run build:plugin
+          pnpm run plugin:check
+
+      - name: Validate agent integration packages
+        run: pnpm run integrations:check
+
       # The MCP tool manifest is produced by the server build; hand it to the
       # schema job instead of installing and building twice.
       - name: Upload MCP build output

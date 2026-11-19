@@ -1,0 +1,33 @@
+# dsh-doc MCP server for Codex CLI
+#
+# Option 1 (recommended): merge this block with the installer, which leaves
+# every other server untouched and refuses to overwrite an existing dsh-doc
+# block unless you pass --force:
+#
+#   node integrations/codex/install.mjs
+#   node integrations/codex/install.mjs --workspace "C:/Users/<you>/Documents/dsh-docs"
+#
+# Option 2: paste the block below into $CODEX_HOME/config.toml
+# (usually %USERPROFILE%\.codex\config.toml) and replace the placeholders.
+#
+# Codex reads `command`, `args` and `env` for a stdio MCP server. `node` must be
+# on the PATH Codex uses; an absolute node executable path works too.
+# Paths are written with forward slashes so they are valid TOML basic strings.
+
+[mcp_servers.dsh-doc]
+command = "node"
+args = ["C:/Users/<you>/Documents/dsh-doc-editor/apps/mcp/dist/main.js"]
+env = { DSH_DOC_WORKSPACE = "C:/Users/<you>/Documents/dsh-doc-editor/.workspace", DSH_DOC_READ_ONLY = "0" }
+
+# Optional AI provider settings. Leave them out (or keep DSH_DOC_AI_PROVIDER =
+# "offline") and the deterministic tools still work; the hosted-AI tools then
+# report AI_NOT_CONFIGURED instead of inventing output.
+#
+# env = { DSH_DOC_WORKSPACE = "C:/Users/<you>/Documents/dsh-docs", DSH_DOC_READ_ONLY = "0", DSH_DOC_AI_PROVIDER = "openai", DSH_DOC_AI_MODEL = "<model-id>" }
+#
+# Never put OPENAI_API_KEY in a committed file. Export it in the shell that
+# starts Codex; the MCP server inherits the environment.
+#
+# Other optional keys documented by Codex, if your build supports them:
+#   startup_timeout_sec = 20
+#   tool_timeout_sec = 120

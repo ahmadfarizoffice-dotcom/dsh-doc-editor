@@ -1,0 +1,24 @@
+{
+  "name": "dsh-doc",
+  "owner": {
+    "name": "ahmadfarizoffice-dotcom"
+  },
+  "metadata": {
+    "description": "Document engine plugins for Claude Code: read, edit, convert and export DOCX/Pages/DOC/ODT/RTF/HTML/Markdown documents through the dsh-doc MCP server."
+  },
+  "plugins": [
+    {
+      "name": "dsh-doc",
+      "source": "./integrations/claude-code",
+      "description": "Document tools, skills and slash commands backed by the dsh-doc MCP server (50 document_* tools, resources and prompts).",
+      "version": "1.0.0",
+      "author": {
+        "name": "ahmadfarizoffice-dotcom"
+      },
+      "homepage": "https://github.com/ahmadfarizoffice-dotcom/dsh-doc-editor",
+      "repository": "https://github.com/ahmadfarizoffice-dotcom/dsh-doc-editor",
+      "license": "MIT",
+      "keywords": ["documents", "docx", "pages", "pdf", "mcp", "conversion"]
+    }
+  ]
+}

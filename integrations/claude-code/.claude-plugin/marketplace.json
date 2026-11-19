@@ -1,0 +1,15 @@
+{
+  "name": "dsh-doc-marketplace",
+  "owner": {
+    "name": "ahmadfarizoffice-dotcom",
+    "url": "https://github.com/ahmadfarizoffice-dotcom"
+  },
+  "plugins": [
+    {
+      "name": "dsh-doc",
+      "source": "./",
+      "description": "Read, edit, format, convert and review Word documents through the DSH document engine MCP server, with 12 document skills and 3 slash commands.",
+      "version": "1.0.0"
+    }
+  ]
+}

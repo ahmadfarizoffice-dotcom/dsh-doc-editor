@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "dsh-doc": {
+      "command": "node",
+      "args": ["C:/Users/<you>/Documents/dsh-doc-editor/apps/mcp/dist/main.js"],
+      "env": {
+        "DSH_DOC_WORKSPACE": "C:/Users/<you>/Documents/dsh-doc-editor/.workspace",
+        "DSH_DOC_READ_ONLY": "0"
+      }
+    }
+  }
+}

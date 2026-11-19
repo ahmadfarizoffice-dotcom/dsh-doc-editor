@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "dsh-doc": {
+      "type": "local",
+      "command": [
+        "node",
+        "C:/Users/<you>/Documents/dsh-doc-editor/apps/mcp/dist/main.js"
+      ],
+      "environment": {
+        "DSH_DOC_WORKSPACE": "C:/Users/<you>/Documents/dsh-doc-editor/.workspace",
+        "DSH_DOC_READ_ONLY": "0"
+      },
+      "enabled": true
+    }
+  }
+}

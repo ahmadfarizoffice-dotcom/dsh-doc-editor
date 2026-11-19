@@ -1,0 +1,20 @@
+{
+  "name": "dsh-doc",
+  "version": "1.0.0",
+  "description": "Document engine for coding agents: read, edit, format, convert, review and render DOCX/DOTX/DOCM, plus PDF/HTML/Markdown export, through 50 MCP tools and 12 skills.",
+  "author": {
+    "name": "DSH Document Engine maintainers",
+    "url": "https://github.com/ahmadfarizoffice-dotcom/dsh-doc-editor"
+  },
+  "repository": "https://github.com/ahmadfarizoffice-dotcom/dsh-doc-editor",
+  "license": "MIT",
+  "keywords": [
+    "documents",
+    "docx",
+    "pdf",
+    "document-conversion",
+    "mcp",
+    "editor",
+    "word"
+  ]
+}
