@@ -52,11 +52,48 @@ const CAPABILITIES: FormatCapabilities = {
   ],
 };
 
-function decodeText(bytes: Buffer, maxBytes: number): string {
+/**
+ * Plain text accepts printable UTF-8 only. NUL bytes, control-heavy payloads and
+ * byte sequences that are not valid UTF-8 are binary content, not text, and are
+ * rejected instead of being decoded into replacement characters.
+ */
+function looksBinary(bytes: Buffer): boolean {
+  if (bytes.length === 0) return false;
+  let control = 0;
+  for (const byte of bytes) {
+    if (byte === 0) return true;
+    if (
+      byte < 0x09 ||
+      (byte > 0x0d && byte < 0x20 && byte !== 0x1b) ||
+      byte === 0x7f
+    ) {
+      control += 1;
+    }
+  }
+  if (control / bytes.length > 0.02) return true;
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return true;
+  }
+  return false;
+}
+
+function decodeText(
+  bytes: Buffer,
+  maxBytes: number,
+  fileName?: string,
+): string {
   if (bytes.byteLength > maxBytes) {
     throw new FormatError(
       "FORMAT_TOO_LARGE",
       `Text input is ${bytes.byteLength} bytes, above the ${maxBytes} byte limit`,
+    );
+  }
+  if (looksBinary(bytes)) {
+    throw new FormatError(
+      "FORMAT_CORRUPT",
+      `${fileName ? `"${fileName}"` : "The input"} is binary: a text format only accepts printable UTF-8, but the bytes contain NUL/control characters or invalid UTF-8`,
     );
   }
   let text = bytes.toString("utf8");
@@ -73,7 +110,11 @@ export async function importText(
   options: FormatImportOptions = {},
 ): Promise<FormatImportResult> {
   const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
-  const text = decodeText(buffer, options.maxBytes ?? 64 * 1024 * 1024);
+  const text = decodeText(
+    buffer,
+    options.maxBytes ?? 64 * 1024 * 1024,
+    options.fileName,
+  );
   const ctx = createDocumentContext({
     metadata: { title: titleFromName(options.fileName) },
   });

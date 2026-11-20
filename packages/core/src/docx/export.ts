@@ -1196,6 +1196,12 @@ function paragraphXml(
   paragraph: Paragraph,
   context: ExportContext,
   sectionTail?: { section: Section; sectionIndex: number },
+  /**
+   * Emit an empty run so an intentionally empty paragraph that also carries a
+   * section break is distinguishable from the synthetic section-end carrier the
+   * exporter writes after a table or empty section.
+   */
+  markEmptyParagraph = false,
 ): void {
   builder.open("w:p");
   const bookmarkName = context.headingBookmarks.get(paragraph.id);
@@ -1227,6 +1233,10 @@ function paragraphXml(
     } else {
       for (const inline of group.inlines) runXml(builder, inline, context);
     }
+  }
+  if (markEmptyParagraph && paragraph.inlines.length === 0) {
+    // A run with no content: valid OOXML that marks a real (empty) paragraph.
+    builder.leaf("w:r");
   }
   if (bookmarkName) {
     builder.leaf("w:bookmarkEnd", { "w:id": context.nextId() });
@@ -2129,9 +2139,10 @@ export async function exportDocx(
     };
 
     if (blocks.length === 0) {
+      // An empty section is represented by its section properties alone (plus a
+      // carrier paragraph when a later section follows). Emitting an extra empty
+      // paragraph here would inject body content on re-import.
       if (isLast) {
-        documentBuilder.open("w:p");
-        documentBuilder.close("w:p");
         sectionPropertiesXml(
           documentBuilder,
           section,
@@ -2149,10 +2160,16 @@ export async function exportDocx(
       const isLastBlock = index === blocks.length - 1;
       if (isLastBlock && !isLast) {
         if (block.type === "paragraph") {
-          paragraphXml(documentBuilder, block, bodyContext, {
-            section,
-            sectionIndex,
-          });
+          paragraphXml(
+            documentBuilder,
+            block,
+            bodyContext,
+            {
+              section,
+              sectionIndex,
+            },
+            block.inlines.length === 0,
+          );
         } else {
           blockXml(documentBuilder, block, bodyContext);
           emitSectionBreak();

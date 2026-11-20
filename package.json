@@ -33,7 +33,11 @@
     "web:start": "node apps/web/dist-server/server.js",
     "cli": "node apps/cli/dist/main.js",
     "integrations:check": "node tools/check-integrations.mjs",
-    "plugin:build": "node tools/build-dsh-plugin.mjs"
+    "plugin:build": "node tools/build-dsh-plugin.mjs",
+    "test:plugin": "node --test dsh-plugin/test/*.test.mjs",
+    "test:fuzz": "vitest run test/fuzz packages/core/test/fuzz",
+    "coverage:gate": "node tools/coverage.mjs",
+    "quality:docs": "node tools/coverage.mjs --docs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

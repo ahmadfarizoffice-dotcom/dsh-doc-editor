@@ -33,6 +33,26 @@ listed as unavailable in the capability matrix rather than silently rejected.
 and the Google Docs pointer never yields document content offline. `exportAny`
 rejects both with `FORMAT_EXPORT_UNSUPPORTED` instead of producing a DOCX.
 
+## Optional LibreOffice engine
+
+The editing engine is model-first and self-contained; LibreOffice is an
+**optional external converter and reference oracle**, never required to edit.
+`document_engine_status` reports whether it is installed, with the detected
+binary, version and every candidate path it probed. When LibreOffice is present
+(verified here with **26.8.3.1**, `soffice.com`), `document_convert_external`
+runs `soffice --headless` with an isolated per-call profile and returns the
+converted file; when it is absent every path fails with `ENGINE_UNAVAILABLE`
+plus the detection evidence, and nothing pretends otherwise.
+
+Use it for formats the internal adapters do not cover well (for example
+high-fidelity PDF rendering of a DOCX, or legacy formats LibreOffice supports)
+and as a differential oracle: `tools/libreoffice-smoke.mjs` converts a DOCX both
+ways and reports page counts and byte sizes from each side, and
+`packages/core/test/engine/libreoffice.test.ts` runs 150-case suites for
+detection, arguments and error mapping against a fake binary, plus real-binary
+integration when installed. Writes stay confined to the workspace and are
+refused in read-only mode.
+
 ## Conversion pairs
 
 The engine supports every pair where both sides have an adapter, and refuses

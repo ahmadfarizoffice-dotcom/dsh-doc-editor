@@ -214,3 +214,121 @@ jobs:
           path: fixtures/generated
           if-no-files-found: ignore
           retention-days: 7
+
+  # Validates docs/RELEASE-CHECKLIST.md and docs/QUALITY-GATES.md exist and
+  # contain the headings the release process depends on. Runs the pure-node
+  # gate tool, so it needs no dependency install.
+  release-docs:
+    name: Release docs gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Validate release docs
+        run: node tools/coverage.mjs --docs
+
+  # Runs the real coverage tooling and fails on a genuine regression only.
+  # tools/coverage.mjs exits 0 with status "unavailable" when the coverage
+  # provider is missing, so a missing provider never fails the build; it exits
+  # 1 when a floor is missed or a test fails, and 2 for a configuration error.
+  quality-coverage:
+    name: Coverage floors
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run coverage gate
+        run: pnpm run coverage:gate
+
+      - name: Upload coverage evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-gate
+          path: |
+            coverage/report.json
+            coverage/decision-table.json
+            coverage/raw
+          if-no-files-found: warn
+          retention-days: 7
+
+  # Fuzz, differential and chaos suites are not implemented yet. This job
+  # detects them and runs them when they exist; when they do not exist it
+  # records the gap (the release checklist marks those gates BLOCKED) instead
+  # of fabricating a pass. It fails the build only on a real suite failure.
+  fuzz:
+    name: Fuzz and fault injection
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Detect quality suites
+        id: suites
+        run: |
+          node --input-type=module -e "
+            import { readdirSync, existsSync } from 'node:fs';
+            const roots = ['test/quality', 'test/fuzz', 'packages/core/test/fuzz'];
+            const files = [];
+            for (const root of roots) {
+              if (!existsSync(root)) continue;
+              for (const entry of readdirSync(root, { recursive: true })) {
+                const name = String(entry).replace(/\\\\/g, '/');
+                if (/\.test\.(ts|mjs)\$/.test(name)) files.push(root + '/' + name);
+              }
+            }
+            console.log('present=' + String(files.length > 0));
+            console.log('files=' + (files.join(',') || 'none'));
+            if (files.length === 0) {
+              console.log('::notice::No fuzz/differential/chaos suites found. They are recorded as BLOCKED in docs/RELEASE-CHECKLIST.md; this is not a pass.');
+            }
+          " >> "$GITHUB_OUTPUT"
+
+      - name: Run fuzz, differential and chaos suites
+        if: steps.suites.outputs.present == 'true'
+        run: |
+          FUZZ_REPORT_DIR=coverage/fuzz FUZZ_SEED=1337 FUZZ_CASES=150 pnpm exec vitest run test/quality test/fuzz packages/core/test/fuzz
+
+      - name: Upload quality suite reports
+        if: always() && steps.suites.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-suite-reports
+          path: coverage/fuzz
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Record missing quality suites
+        if: steps.suites.outputs.present != 'true'
+        run: echo "No fuzz/differential/chaos suites present; nothing was exercised. Gates stay BLOCKED."

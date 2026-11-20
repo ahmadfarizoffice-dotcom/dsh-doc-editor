@@ -75,6 +75,14 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xd800 && code <= 0xdbff;
+}
+
+function isLowSurrogate(code: number): boolean {
+  return code >= 0xdc00 && code <= 0xdfff;
+}
+
 /** Length a position contributes inside its paragraph text. */
 export function inlineLength(inline: Inline): number {
   switch (inline.type) {
@@ -112,7 +120,17 @@ export function ensureBoundary(
   if (inline.type !== "text") {
     return position.offset > 0 ? index + 1 : index;
   }
-  const offset = clamp(position.offset, 0, inline.text.length);
+  let offset = clamp(position.offset, 0, inline.text.length);
+  // Never split a surrogate pair across two runs: a lone half cannot be
+  // represented in XML and would be replaced with U+FFFD by the DOCX exporter.
+  if (
+    offset > 0 &&
+    offset < inline.text.length &&
+    isHighSurrogate(inline.text.charCodeAt(offset - 1)) &&
+    isLowSurrogate(inline.text.charCodeAt(offset))
+  ) {
+    offset -= 1;
+  }
   if (offset <= 0) return index;
   if (offset >= inline.text.length) return index + 1;
   const left = {
@@ -1903,13 +1921,74 @@ export function insertSectionBreak(
   return { sectionIndex: at.sectionIndex + 1 };
 }
 
+/** Assigns fresh ids to every block/table/row/cell inside a cloned block list. */
+function rekeyBlocks(doc: DocDocument, blocks: Block[]): void {
+  for (const block of blocks) {
+    block.id = newId(
+      doc,
+      block.type === "table" ? "tbl" : block.type === "toc" ? "toc" : "p",
+    );
+    if (block.type === "table") {
+      for (const row of block.rows) {
+        row.id = newId(doc, "row");
+        for (const cell of row.cells) {
+          cell.id = newId(doc, "cell");
+          rekeyBlocks(doc, cell.blocks);
+        }
+      }
+    }
+  }
+}
+
 function rekeyHeaderFooters(doc: DocDocument, section: Section): void {
   for (const set of [section.headers, section.footers]) {
     for (const variant of ["default", "first", "even"] as const) {
       const part = set[variant];
-      if (part) part.id = newId(doc, "hf");
+      if (!part) continue;
+      part.id = newId(doc, "hf");
+      // Cloned header/footer parts must not share block ids with the section
+      // they were copied from; otherwise ids are duplicated across sections.
+      rekeyBlocks(doc, part.blocks);
     }
   }
+}
+
+/** True when every structural id in the document is unique. */
+export function hasUniqueStructuralIds(doc: DocDocument): boolean {
+  const seen = new Set<string>();
+  let unique = true;
+  const walk = (blocks: Block[]): void => {
+    for (const block of blocks) {
+      if (seen.has(block.id)) unique = false;
+      seen.add(block.id);
+      if (block.type === "table") {
+        for (const row of block.rows) {
+          if (seen.has(row.id)) unique = false;
+          seen.add(row.id);
+          for (const cell of row.cells) {
+            if (seen.has(cell.id)) unique = false;
+            seen.add(cell.id);
+            walk(cell.blocks);
+          }
+        }
+      }
+    }
+  };
+  for (const section of doc.sections) {
+    if (seen.has(section.id)) unique = false;
+    seen.add(section.id);
+    walk(section.blocks);
+    for (const set of [section.headers, section.footers]) {
+      for (const variant of ["default", "first", "even"] as const) {
+        const part = set[variant];
+        if (!part) continue;
+        if (seen.has(part.id)) unique = false;
+        seen.add(part.id);
+        walk(part.blocks);
+      }
+    }
+  }
+  return unique;
 }
 
 /** Sets a header/footer variant to plain text or structured blocks. */

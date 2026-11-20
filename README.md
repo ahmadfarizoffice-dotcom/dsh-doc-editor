@@ -1,4 +1,4 @@
-# DSH Document Engine (`dsh-doc-editor`)
+﻿# DSH Document Engine (`dsh-doc-editor`)
 
 A universal document platform: a Word/Google-Docs-style editor, an independent
 layout and rendering engine, a conversion engine, and a programmable document
@@ -189,7 +189,7 @@ fixture** generated from real OOXML that adds those constructs — see
 | Layout engine (pagination, line breaking, tables, floats, headers/footers, footnotes, columns)                                   | ✅                                                   |
 | HTML, SVG and PDF renderers over the layout model                                                                                | ✅                                                   |
 | Conversion engine with capability matrix and loss reports                                                                        | ✅ (adapters vary — see matrix)                      |
-| MCP server: 50 tools, 8 resources, 8 prompts, typed schemas                                                                      | ✅                                                   |
+| MCP server: 52 tools, 8 resources, 8 prompts, typed schemas                                                                      | ✅                                                   |
 | Native agent tool definitions (JSON Schema)                                                                                      | ✅                                                   |
 | Reusable skills (12)                                                                                                             | ✅                                                   |
 | Editor UI (formatting, tables, images, comments, find/replace, outline, AI panel, print preview)                                 | ✅                                                   |

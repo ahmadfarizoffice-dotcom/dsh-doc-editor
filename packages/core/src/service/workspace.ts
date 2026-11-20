@@ -7,6 +7,8 @@ import {
   mkdir,
   readFile,
   readdir,
+  realpath,
+  rename,
   rm,
   stat,
   writeFile,
@@ -52,6 +54,8 @@ export class Workspace {
   private readonly allowedReadRoots: string[];
   private readonly auditPath: string;
   private readonly realRoot: string;
+  private canonicalRootsCache?: string[];
+  private readonly documentLocks = new Map<string, Promise<void>>();
 
   constructor(options: WorkspaceOptions) {
     this.root = path.resolve(options.root);
@@ -116,6 +120,59 @@ export class Workspace {
     return resolved;
   }
 
+  private static contains(root: string, candidate: string): boolean {
+    const relative = path.relative(root, candidate);
+    return (
+      relative === "" ||
+      (!relative.startsWith("..") && !path.isAbsolute(relative))
+    );
+  }
+
+  /**
+   * Canonical roots (symlinks/junctions resolved) used for containment checks.
+   * A root that cannot be resolved yet keeps its lexical form.
+   */
+  private async canonicalRoots(): Promise<string[]> {
+    if (this.canonicalRootsCache) return this.canonicalRootsCache;
+    const roots = [this.root, ...this.allowedReadRoots];
+    const canonical: string[] = [];
+    for (const root of roots) {
+      try {
+        canonical.push(await realpath(root));
+      } catch {
+        canonical.push(path.resolve(root));
+      }
+    }
+    this.canonicalRootsCache = canonical;
+    return canonical;
+  }
+
+  /**
+   * Validates an external read path and returns its canonical (realpath)
+   * location. Directory junctions and symlinks inside the workspace that point
+   * outside every configured root are rejected before the file is read.
+   */
+  async resolveReadPathCanonical(input: string): Promise<string> {
+    const resolved = this.resolveReadPath(input);
+    let canonical = resolved;
+    try {
+      canonical = await realpath(resolved);
+    } catch {
+      // Missing target: the lexical check above already passed; the caller
+      // reports FILE_NOT_FOUND.
+      canonical = resolved;
+    }
+    const roots = await this.canonicalRoots();
+    if (!roots.some((root) => Workspace.contains(root, canonical))) {
+      throw new ServiceError(
+        "PATH_OUTSIDE_WORKSPACE",
+        "File access is restricted to the workspace and configured read roots",
+        { path: canonical },
+      );
+    }
+    return canonical;
+  }
+
   async list(): Promise<DocumentRecord[]> {
     const dir = path.join(this.root, "documents");
     let entries: string[] = [];
@@ -177,6 +234,30 @@ export class Workspace {
     );
   }
 
+  /**
+   * Serializes writers for one document so concurrent saves cannot interleave
+   * their stage/backup/rename steps.
+   */
+  private async withDocumentLock<T>(
+    id: string,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.documentLocks.get(id) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.then(() => current);
+    this.documentLocks.set(id, tail);
+    await previous.catch(() => undefined);
+    try {
+      return await work();
+    } finally {
+      release();
+      if (this.documentLocks.get(id) === tail) this.documentLocks.delete(id);
+    }
+  }
+
   async saveDocument(
     id: string,
     document: DocDocument,
@@ -184,34 +265,104 @@ export class Workspace {
     record: Omit<DocumentRecord, "id" | "updatedAt">,
   ): Promise<DocumentRecord> {
     this.assertWritable();
+    return this.withDocumentLock(id, () =>
+      this.saveDocumentUnlocked(id, document, docx, record),
+    );
+  }
+
+  private async saveDocumentUnlocked(
+    id: string,
+    document: DocDocument,
+    docx: Buffer | undefined,
+    record: Omit<DocumentRecord, "id" | "updatedAt">,
+  ): Promise<DocumentRecord> {
     const dir = this.documentDir(id);
     await mkdir(dir, { recursive: true });
-    await writeFile(
-      path.join(dir, "document.json"),
-      JSON.stringify(document),
-      "utf8",
-    );
-    if (docx) await writeFile(path.join(dir, "document.docx"), docx);
     const stored: DocumentRecord = {
       ...record,
       id,
       updatedAt: new Date().toISOString(),
     };
-    await writeFile(
-      path.join(dir, "record.json"),
-      JSON.stringify(stored, null, 2),
-      "utf8",
-    );
+    if (docx && !(docx.length >= 2 && docx[0] === 0x50 && docx[1] === 0x4b)) {
+      throw new ServiceError(
+        "SAVE_FAILED",
+        `Refusing to store a non-ZIP payload as document.docx for ${id}`,
+      );
+    }
+    const files: Array<{ name: string; data: string | Buffer }> = [
+      { name: "document.json", data: JSON.stringify(document) },
+      ...(docx ? [{ name: "document.docx", data: docx }] : []),
+      { name: "record.json", data: JSON.stringify(stored, null, 2) },
+    ];
+    const targets = files.map((file) => path.join(dir, file.name));
+
+    // Preflight every destination before changing anything: a directory or other
+    // non-regular entry can never be replaced atomically, so fail early.
+    for (let index = 0; index < targets.length; index += 1) {
+      const info = await stat(targets[index]).catch(() => undefined);
+      if (info && !info.isFile()) {
+        throw new ServiceError(
+          "SAVE_FAILED",
+          `Cannot save document ${id}: ${files[index].name} is not a regular file`,
+          { path: targets[index] },
+        );
+      }
+    }
+
+    const stamp = `${process.pid.toString(36)}-${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`;
+    const staged: string[] = [];
+    const backups: Array<{ target: string; backup: string }> = [];
+    try {
+      // Stage every payload next to its destination first.
+      for (let index = 0; index < files.length; index += 1) {
+        const temp = `${targets[index]}.${stamp}.tmp`;
+        await writeFile(temp, files[index].data);
+        staged.push(temp);
+      }
+      // Move the previous files aside so a mid-commit failure can be undone.
+      for (const target of targets) {
+        const info = await stat(target).catch(() => undefined);
+        if (!info) continue;
+        const backup = `${target}.${stamp}.bak`;
+        await rename(target, backup);
+        backups.push({ target, backup });
+      }
+      for (let index = 0; index < staged.length; index += 1) {
+        await rename(staged[index], targets[index]);
+      }
+    } catch (error) {
+      // Roll back: restore the previous snapshot and drop anything staged.
+      for (const { target, backup } of backups.reverse()) {
+        await rm(target, { force: true }).catch(() => undefined);
+        await rename(backup, target).catch(() => undefined);
+      }
+      for (const temp of staged) {
+        await rm(temp, { force: true }).catch(() => undefined);
+      }
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new ServiceError(
+        "SAVE_FAILED",
+        `Could not save document ${id}: ${detail}`,
+        { path: dir },
+      );
+    }
+    for (const { backup } of backups) {
+      await rm(backup, { force: true }).catch(() => undefined);
+    }
     return stored;
   }
 
   async deleteDocument(id: string): Promise<void> {
     this.assertWritable();
-    await rm(this.documentDir(id), { recursive: true, force: true });
+    await this.withDocumentLock(id, () =>
+      rm(this.documentDir(id), { recursive: true, force: true }),
+    );
   }
 
   async readExternal(filePath: string): Promise<Buffer> {
-    const resolved = this.resolveReadPath(filePath);
+    const resolved = await this.resolveReadPathCanonical(filePath);
     const info = await stat(resolved).catch(() => undefined);
     if (!info || !info.isFile()) {
       throw new ServiceError("FILE_NOT_FOUND", `File not found: ${resolved}`);

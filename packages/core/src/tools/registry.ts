@@ -874,6 +874,56 @@ tool({
     ),
 });
 
+tool({
+  name: "document_engine_status",
+  title: "External engine status",
+  category: "conversion",
+  description:
+    "Reports whether the optional LibreOffice engine is installed and usable, alongside the internal engine capability matrix. When LibreOffice is absent the result is available:false with the detection evidence and reason; it never claims a converter that does not exist.",
+  inputSchema: {},
+  handler: async ({ service }) => service.engineStatus(),
+});
+
+tool({
+  name: "document_convert_external",
+  title: "Convert with LibreOffice",
+  category: "conversion",
+  mutating: true,
+  description:
+    "Converts a document through an installed LibreOffice binary (docx, odt, rtf, txt, html, pdf). Reports ENGINE_UNAVAILABLE with detection evidence when LibreOffice is not installed. An output path must stay inside the workspace and is refused in read-only mode.",
+  inputSchema: {
+    inputPath: z
+      .string()
+      .min(1)
+      .max(4096)
+      .describe("Absolute path of an existing document to convert"),
+    format: z
+      .string()
+      .min(1)
+      .max(160)
+      .describe(
+        "Target format: docx, odt, rtf, txt, html, pdf, or ext:Filter Name",
+      ),
+    outputPath: z
+      .string()
+      .max(4096)
+      .optional()
+      .describe("Optional workspace path for the converted file"),
+    timeoutMs: z.number().int().min(50).max(600000).optional(),
+  },
+  handler: async ({ service }, args) =>
+    service.convertWithExternalEngine({
+      inputPath: String(args.inputPath ?? ""),
+      format: String(args.format ?? ""),
+      ...(args.outputPath === undefined
+        ? {}
+        : { outputPath: String(args.outputPath) }),
+      ...(args.timeoutMs === undefined
+        ? {}
+        : { timeoutMs: Number(args.timeoutMs) }),
+    }),
+});
+
 /* --------------------------------------------------------------------- AI */
 
 tool({

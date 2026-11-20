@@ -30,6 +30,7 @@ import {
   findCellById,
   formatParagraphs,
   formatRange,
+  hasUniqueStructuralIds,
   insertEquation,
   insertImage,
   insertLineBreak,
@@ -42,6 +43,7 @@ import {
   insertText,
   insertToc,
   insertFootnote,
+  inlineLength as inlineTextLength,
   mergeCells,
   removeList,
   setColumns,
@@ -88,6 +90,14 @@ import type { LayoutResult, PageInfo } from "../layout/types.js";
 import { exportDocx } from "../docx/export.js";
 import { importDocx } from "../docx/import.js";
 import type { CompatibilityReport } from "../model/types.js";
+import {
+  convertWithLibreOffice,
+  detectLibreOffice,
+  LibreOfficeError,
+  LIBREOFFICE_CONVERSION_FORMATS,
+  LIBREOFFICE_INSTALL_HINT,
+  supportedLibreOfficeFormats,
+} from "../engine/libreoffice.js";
 import { ServiceError, Workspace, type DocumentRecord } from "./workspace.js";
 
 export interface Session {
@@ -338,27 +348,26 @@ export class DocumentService {
     const target = filePath
       ? this.workspace.resolveWritePath(filePath)
       : this.workspace.documentDir(documentId);
-    const exported = await exportDocx(session.document, {
+    // Snapshot the model so an edit that lands while the DOCX is exported cannot
+    // produce a JSON/DOCX pair from two different revisions.
+    const snapshot = structuredClone(session.document);
+    const revisionAtSave = session.revision;
+    const exported = await exportDocx(snapshot, {
       preserveTimestamps: false,
     });
-    const layout = this.layout(session);
+    const layout = layoutDocument(snapshot);
     if (filePath) {
       await fsMkdir(path.dirname(target), { recursive: true });
       await fsWriteFile(target, exported.buffer);
     }
-    await this.workspace.saveDocument(
-      documentId,
-      session.document,
-      exported.buffer,
-      {
-        title: session.document.metadata.title ?? "Untitled document",
-        createdAt: session.document.metadata.created ?? session.createdAt,
-        sourceFormat: "docx",
-        wordCount: countWords(documentText(session.document)),
-        pageCount: layout.pageCount,
-      },
-    );
-    session.dirty = false;
+    await this.workspace.saveDocument(documentId, snapshot, exported.buffer, {
+      title: snapshot.metadata.title ?? "Untitled document",
+      createdAt: snapshot.metadata.created ?? session.createdAt,
+      sourceFormat: "docx",
+      wordCount: countWords(documentText(snapshot)),
+      pageCount: layout.pageCount,
+    });
+    if (session.revision === revisionAtSave) session.dirty = false;
     const savedAt = new Date().toISOString();
     await this.workspace.audit({
       action: "document_save",
@@ -379,6 +388,8 @@ export class DocumentService {
     documentId: string,
     filePath: string,
   ): Promise<{ path: string; savedAt: string; bytes: number }> {
+    // Every route that writes into the workspace is refused in read-only mode.
+    this.workspace.assertWritable();
     const target = this.workspace.resolveWritePath(filePath);
     const session = this.session(documentId);
     const extension = path.extname(target).slice(1).toLowerCase();
@@ -713,7 +724,14 @@ export class DocumentService {
 
   /* -------------------------------------------------------------- editing */
 
-  private resolvePosition(
+  /**
+   * Validates a caller-supplied position before a mutation or a read.
+   *
+   * Positions are never silently clamped: a reversed, negative, non-finite or
+   * out-of-text position raises a typed `INVALID_RANGE`, so callers cannot end
+   * up with a partially applied edit.
+   */
+  private validatePosition(
     doc: DocDocument,
     position: PositionInput,
   ): TextPosition {
@@ -723,24 +741,91 @@ export class DocumentService {
         "BLOCK_NOT_FOUND",
         `Unknown paragraph: ${position.blockId}`,
       );
-    if (position.inlineIndex !== undefined) {
-      return {
-        blockId: position.blockId,
-        inlineIndex: Math.max(0, position.inlineIndex),
-        offset: Math.max(0, position.offset ?? 0),
-      };
+    const paragraph = located.paragraph;
+    const inlineIndex = position.inlineIndex;
+    if (inlineIndex !== undefined) {
+      if (
+        !Number.isInteger(inlineIndex) ||
+        inlineIndex < 0 ||
+        inlineIndex > paragraph.inlines.length
+      ) {
+        throw new ServiceError(
+          "INVALID_RANGE",
+          `inlineIndex ${inlineIndex} is out of bounds for paragraph ${position.blockId}`,
+        );
+      }
     }
-    return textOffsetToPosition(
-      located.paragraph,
-      Math.max(0, position.offset ?? 0),
+    const offset = position.offset ?? 0;
+    if (!Number.isFinite(offset) || offset < 0) {
+      throw new ServiceError(
+        "INVALID_RANGE",
+        `offset ${offset} is out of bounds for paragraph ${position.blockId}`,
+      );
+    }
+    if (inlineIndex !== undefined) {
+      const inline = paragraph.inlines[inlineIndex];
+      const max = inline
+        ? inline.type === "text"
+          ? inline.text.length
+          : 0
+        : 0;
+      if (offset > max) {
+        throw new ServiceError(
+          "INVALID_RANGE",
+          `offset ${offset} is out of bounds for paragraph ${position.blockId}`,
+        );
+      }
+      return { blockId: position.blockId, inlineIndex, offset };
+    }
+    const total = paragraph.inlines.reduce(
+      (sum, inline) => sum + inlineTextLength(inline),
+      0,
     );
+    if (offset > total) {
+      throw new ServiceError(
+        "INVALID_RANGE",
+        `offset ${offset} is out of bounds for paragraph ${position.blockId}`,
+      );
+    }
+    return textOffsetToPosition(paragraph, offset);
+  }
+
+  private resolvePosition(
+    doc: DocDocument,
+    position: PositionInput,
+  ): TextPosition {
+    return this.validatePosition(doc, position);
+  }
+
+  private static positionFollows(
+    start: TextPosition,
+    end: TextPosition,
+  ): boolean {
+    if (start.inlineIndex !== end.inlineIndex)
+      return start.inlineIndex > end.inlineIndex;
+    return start.offset > end.offset;
   }
 
   private resolveRange(doc: DocDocument, range: RangeInput): DocRange {
-    return {
-      start: this.resolvePosition(doc, range.start),
-      end: this.resolvePosition(doc, range.end),
-    };
+    const start = this.validatePosition(doc, range.start);
+    const end = this.validatePosition(doc, range.end);
+    const order = new Map<string, number>();
+    listBlocks(doc).forEach((entry, index) => {
+      order.set(entry.block.id, index);
+    });
+    const startOrder = order.get(start.blockId);
+    const endOrder = order.get(end.blockId);
+    if (startOrder === undefined || endOrder === undefined)
+      throw new ServiceError(
+        "BLOCK_NOT_FOUND",
+        `Unknown paragraph: ${startOrder === undefined ? start.blockId : end.blockId}`,
+      );
+    const reversed =
+      startOrder > endOrder ||
+      (startOrder === endOrder && DocumentService.positionFollows(start, end));
+    if (reversed)
+      throw new ServiceError("INVALID_RANGE", "Range end precedes its start");
+    return { start, end };
   }
 
   private offsetOf(
@@ -1009,6 +1094,7 @@ export class DocumentService {
             "INVALID_ARGUMENT",
             "mergeCells requires region",
           );
+        this.assertMergeRegion(table, input.region);
         result = mergeCells(session.document, input.tableId, input.region);
         break;
       case "splitCell":
@@ -1032,6 +1118,81 @@ export class DocumentService {
     return this.afterMutation(session, "document_edit_table", result, {
       operation: input.operation,
     });
+  }
+
+  /**
+   * Rejects merge regions that the model would otherwise clamp: reversed or
+   * non-integer bounds, coordinates outside the grid, and regions that overlap
+   * a cell that is already merged.
+   */
+  private assertMergeRegion(
+    table: Table,
+    region: {
+      startRow: number;
+      endRow: number;
+      startColumn: number;
+      endColumn: number;
+    },
+  ): void {
+    const bounds = [
+      region.startRow,
+      region.endRow,
+      region.startColumn,
+      region.endColumn,
+    ];
+    if (bounds.some((value) => !Number.isInteger(value))) {
+      throw new ServiceError(
+        "INVALID_RANGE",
+        "mergeCells region bounds must be integers",
+      );
+    }
+    const { startRow, endRow, startColumn, endColumn } = region;
+    if (startRow < 0 || startColumn < 0) {
+      throw new ServiceError(
+        "INVALID_RANGE",
+        "mergeCells region must not start before the first row/column",
+      );
+    }
+    if (endRow < startRow || endColumn < startColumn) {
+      throw new ServiceError(
+        "INVALID_RANGE",
+        "mergeCells region end precedes its start",
+      );
+    }
+    if (endRow >= table.rows.length) {
+      throw new ServiceError(
+        "INVALID_RANGE",
+        `mergeCells row ${endRow} is outside the table (${table.rows.length} rows)`,
+      );
+    }
+    for (let rowIndex = startRow; rowIndex <= endRow; rowIndex += 1) {
+      const row = table.rows[rowIndex];
+      if (!row || endColumn >= row.cells.length) {
+        throw new ServiceError(
+          "INVALID_RANGE",
+          `mergeCells column is outside the table at row ${rowIndex}`,
+        );
+      }
+      for (
+        let columnIndex = startColumn;
+        columnIndex <= endColumn;
+        columnIndex += 1
+      ) {
+        const cell = row.cells[columnIndex];
+        if (!cell) {
+          throw new ServiceError(
+            "INVALID_RANGE",
+            `mergeCells column ${columnIndex} is outside row ${rowIndex}`,
+          );
+        }
+        if ((cell.props.gridSpan ?? 1) > 1 || cell.props.vMerge) {
+          throw new ServiceError(
+            "INVALID_RANGE",
+            `mergeCells region overlaps an existing merge at ${rowIndex}:${columnIndex}`,
+          );
+        }
+      }
+    }
   }
 
   async insertImage(
@@ -1167,6 +1328,14 @@ export class DocumentService {
       { sectionIndex, blockIndex },
       { type: input.type ?? "nextPage", page },
     );
+    // Cloned header/footer parts are re-keyed by the model; enforce the global
+    // uniqueness invariant so a regression cannot silently duplicate ids.
+    if (!hasUniqueStructuralIds(session.document)) {
+      throw new ServiceError(
+        "INVALID_STATE",
+        "Section break produced duplicate structural ids",
+      );
+    }
     if (input.landscape !== undefined) {
       session.document.sections[result.sectionIndex].page.orientation =
         input.landscape ? "landscape" : "portrait";
@@ -1209,16 +1378,92 @@ export class DocumentService {
   ): unknown {
     const session = this.session(documentId);
     const sectionIndex = input.sectionIndex ?? 0;
+    const section = session.document.sections[sectionIndex];
+    if (!section) {
+      throw new ServiceError(
+        "SECTION_NOT_FOUND",
+        `Unknown section: ${sectionIndex}`,
+      );
+    }
+    if (input.page) {
+      const page = input.page;
+      if (
+        page.orientation !== undefined &&
+        page.orientation !== "portrait" &&
+        page.orientation !== "landscape"
+      ) {
+        throw new ServiceError(
+          "INVALID_ARGUMENT",
+          `Unknown orientation: ${String(page.orientation)}`,
+        );
+      }
+      for (const key of ["width", "height"] as const) {
+        const value = page[key];
+        if (value !== undefined && (!Number.isFinite(value) || value <= 0)) {
+          throw new ServiceError(
+            "INVALID_ARGUMENT",
+            `Page ${key} must be a positive finite number`,
+          );
+        }
+      }
+      const margins =
+        (page.margins as unknown as Record<string, number | undefined>) ?? {};
+      for (const [edge, value] of Object.entries(margins)) {
+        if (value === undefined) continue;
+        if (!Number.isFinite(value)) {
+          throw new ServiceError(
+            "INVALID_ARGUMENT",
+            `Page margin ${edge} must be a finite number`,
+          );
+        }
+        const mustBePositive = ["top", "right", "bottom", "left"].includes(
+          edge,
+        );
+        if (mustBePositive ? value <= 0 : value < 0) {
+          throw new ServiceError(
+            "INVALID_ARGUMENT",
+            `Page margin ${edge} must be ${mustBePositive ? "greater than zero" : "non-negative"}`,
+          );
+        }
+      }
+    }
+    if (input.columns) {
+      if (!Number.isInteger(input.columns.count) || input.columns.count < 1) {
+        throw new ServiceError(
+          "INVALID_ARGUMENT",
+          `Column count must be at least 1 (received ${String(input.columns.count)})`,
+        );
+      }
+      if (!Number.isFinite(input.columns.space) || input.columns.space < 0) {
+        throw new ServiceError(
+          "INVALID_ARGUMENT",
+          "Column spacing must be a non-negative finite number",
+        );
+      }
+    }
+    const previousPage = structuredClone(section.page);
     if (input.page) setPageSetup(session.document, sectionIndex, input.page);
     if (input.columns)
       setColumns(session.document, sectionIndex, input.columns);
+    // Geometry must still fit the page after the patch; roll back on overflow.
+    const applied = session.document.sections[sectionIndex];
+    const fits =
+      applied.page.margins.left + applied.page.margins.right <
+        applied.page.width &&
+      applied.page.margins.top + applied.page.margins.bottom <
+        applied.page.height;
+    if (!fits) {
+      applied.page = previousPage;
+      throw new ServiceError(
+        "INVALID_ARGUMENT",
+        "Page margins do not fit inside the page",
+      );
+    }
     if (input.pageNumbers) {
-      const section = session.document.sections[sectionIndex];
-      if (section)
-        section.pageNumbering = {
-          ...(section.pageNumbering ?? {}),
-          ...input.pageNumbers,
-        };
+      applied.pageNumbering = {
+        ...(applied.pageNumbering ?? {}),
+        ...input.pageNumbers,
+      };
     }
     return this.afterMutation(session, "document_layout", { sectionIndex });
   }
@@ -1444,6 +1689,7 @@ export class DocumentService {
     to: string;
     outputPath?: string;
   }): Promise<unknown> {
+    if (input.outputPath) this.workspace.assertWritable();
     const convert = await this.tryConvert();
     if (!convert)
       throw new ServiceError(
@@ -1495,6 +1741,7 @@ export class DocumentService {
     path: string | null;
     dataBase64?: string;
   }> {
+    if (outputPath) this.workspace.assertWritable();
     const session = this.session(documentId);
     const render = await import("../render/index.js");
     const layout = this.layout(session);
@@ -1532,6 +1779,7 @@ export class DocumentService {
     format: string,
     outputPath?: string,
   ): Promise<unknown> {
+    if (outputPath) this.workspace.assertWritable();
     const session = this.session(documentId);
     const normalized = format.toLowerCase().replace(/^\./, "");
     if (
@@ -1586,6 +1834,168 @@ export class DocumentService {
       dataBase64: result.buffer.toString("base64"),
       losses: result.losses ?? [],
     };
+  }
+
+  /**
+   * Reports the optional external engines. Always resolves: an absent
+   * LibreOffice install is reported as `available: false` together with the
+   * detection evidence (candidates, probe attempts and a stable reason), never
+   * as a silent capability.
+   */
+  async engineStatus(options: { refresh?: boolean } = {}): Promise<{
+    available: boolean;
+    reason: string | null;
+    checkedAt: string;
+    installHint: string;
+    workspace: { readOnly: boolean };
+    engines: Record<string, unknown>;
+    capabilities: Array<{
+      format: string;
+      internal: { import: boolean; export: boolean };
+      libreoffice: { available: boolean; import: boolean; export: boolean };
+    }>;
+  }> {
+    const detection = await detectLibreOffice({
+      refresh: options.refresh === true,
+    });
+    const listed = (await this.listFormats()) as {
+      import?: string[];
+      export?: string[];
+    };
+    const internalImport = new Set(
+      (listed.import ?? []).map((entry) => entry.toLowerCase()),
+    );
+    const internalExport = new Set(
+      (listed.export ?? []).map((entry) => entry.toLowerCase()),
+    );
+    const libreOfficeImport = new Set(
+      Object.values(LIBREOFFICE_CONVERSION_FORMATS).flatMap((definition) => [
+        ...definition.inputExtensions,
+      ]),
+    );
+    const formats = [
+      ...new Set([
+        ...supportedLibreOfficeFormats(),
+        ...internalImport,
+        ...internalExport,
+      ]),
+    ].sort();
+    const capabilities = formats.map((format) => ({
+      format,
+      internal: {
+        import: internalImport.has(format),
+        export: internalExport.has(format),
+      },
+      libreoffice: {
+        available: detection.available,
+        import: detection.available && libreOfficeImport.has(format),
+        export:
+          detection.available &&
+          Object.hasOwn(LIBREOFFICE_CONVERSION_FORMATS, format),
+      },
+    }));
+
+    return {
+      available: detection.available,
+      reason: detection.available ? null : (detection.reason ?? "not-found"),
+      checkedAt: detection.checkedAt,
+      installHint: LIBREOFFICE_INSTALL_HINT,
+      workspace: { readOnly: this.workspace.readOnly },
+      engines: {
+        internal: {
+          id: "internal",
+          available: true,
+          name: "Built-in layout/PDF renderer and format adapters",
+          pdf: { export: true, import: false, pixelAccurate: false },
+          note: "PDF export is produced by the internal layout engine; it is not a LibreOffice render.",
+        },
+        libreoffice: {
+          id: "libreoffice",
+          available: detection.available,
+          path: detection.path,
+          version: detection.version ?? null,
+          source: detection.source,
+          reason: detection.available
+            ? null
+            : (detection.reason ?? "not-found"),
+          detection,
+        },
+      },
+      capabilities,
+    };
+  }
+
+  /**
+   * Converts a document through the optional LibreOffice engine. Input may be
+   * read from the workspace or any configured read root; a requested output
+   * path must stay inside the workspace and is refused in read-only mode.
+   * Every LibreOffice failure keeps its typed code and detection evidence.
+   */
+  async convertWithExternalEngine(input: {
+    inputPath: string;
+    format: string;
+    outputPath?: string;
+    timeoutMs?: number;
+  }): Promise<unknown> {
+    if (
+      typeof input.inputPath !== "string" ||
+      input.inputPath.trim().length === 0
+    ) {
+      throw new ServiceError(
+        "INVALID_ARGUMENT",
+        "inputPath is required for external conversion",
+      );
+    }
+    const inputPath = this.workspace.resolveReadPath(input.inputPath);
+    let outputPath: string | undefined;
+    if (input.outputPath !== undefined) {
+      if (
+        typeof input.outputPath !== "string" ||
+        input.outputPath.trim().length === 0
+      ) {
+        throw new ServiceError(
+          "INVALID_ARGUMENT",
+          "outputPath must be a non-empty string when supplied",
+        );
+      }
+      this.workspace.assertWritable();
+      outputPath = this.workspace.resolveWritePath(input.outputPath);
+    }
+    try {
+      const result = await convertWithLibreOffice({
+        inputPath,
+        format:
+          typeof input.format === "string"
+            ? input.format
+            : String(input.format),
+        ...(outputPath === undefined ? {} : { outputPath }),
+        ...(input.timeoutMs === undefined
+          ? {}
+          : { timeoutMs: input.timeoutMs }),
+        workspaceRoot: this.workspace.root,
+        readOnly: this.workspace.readOnly,
+      });
+      await this.workspace.audit({
+        action: "document_convert_external",
+        outcome: "ok",
+        detail: {
+          format: result.format,
+          bytes: result.bytes,
+          output: outputPath !== undefined,
+        },
+      });
+      return result;
+    } catch (error) {
+      if (error instanceof LibreOfficeError) {
+        await this.workspace.audit({
+          action: "document_convert_external",
+          outcome: "error",
+          detail: { code: error.code, format: input.format },
+        });
+        throw new ServiceError(error.code, error.message, error.details);
+      }
+      throw error;
+    }
   }
 
   async listFormats(): Promise<unknown> {

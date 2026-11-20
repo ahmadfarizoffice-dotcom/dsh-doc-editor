@@ -1,4 +1,4 @@
-# MCP server
+﻿# MCP server
 
 `apps/mcp` implements the Model Context Protocol over **stdio** using the
 official TypeScript SDK (`@modelcontextprotocol/sdk` 1.32, protocol revision
@@ -69,7 +69,7 @@ Every tool returns a JSON envelope in a text content block:
 
 with `isError: true` on failures.
 
-## Tools (50)
+## Tools (52)
 
 ### Lifecycle
 
@@ -132,12 +132,14 @@ with `isError: true` on failures.
 
 ### Conversion
 
-| Tool                  | Purpose                                            |
-| --------------------- | -------------------------------------------------- |
-| `document_convert`    | Convert open document (or path) to a target format |
-| `document_export_pdf` | Layout engine → PDF (returns page count)           |
-| `document_import`     | Import any supported format                        |
-| `document_export`     | Export to docx/dotx/docm/pdf/html/md/txt/odt/rtf   |
+| Tool                        | Purpose                                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `document_convert`          | Convert open document (or path) to a target format                                                       |
+| `document_export_pdf`       | Layout engine → PDF (returns page count)                                                                 |
+| `document_import`           | Import any supported format                                                                              |
+| `document_export`           | Export to docx/dotx/docm/pdf/html/md/txt/odt/rtf                                                         |
+| `document_engine_status`    | Optional external engine (LibreOffice) detection, version and capability matrix                          |
+| `document_convert_external` | Convert through LibreOffice when installed; typed `ENGINE_UNAVAILABLE` with detection evidence otherwise |
 
 ### AI
 

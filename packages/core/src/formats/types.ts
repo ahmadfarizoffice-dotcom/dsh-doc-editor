@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Format adapter contract.
  *
  * Every document format supported by the platform is described by one
@@ -108,6 +108,9 @@ export type FormatErrorCode =
   | "FORMAT_IMPORT_UNSUPPORTED"
   | "FORMAT_EXPORT_UNSUPPORTED"
   | "FORMAT_INVALID_INPUT"
+  | "FORMAT_CORRUPT"
+  | "FORMAT_BOMB"
+  | "FORMAT_UNSUPPORTED"
   | "FORMAT_TOO_LARGE"
   | "FORMAT_UNSUPPORTED_CONTAINER"
   | "CONVERSION_UNSUPPORTED"

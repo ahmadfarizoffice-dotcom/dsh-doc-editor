@@ -35,6 +35,7 @@ import type {
   Table,
   TableCell,
   TableRow,
+  TocBlock,
 } from "../model/types.js";
 import {
   addImageInline,
@@ -288,6 +289,51 @@ export function decodeHtmlEntities(text: string): string {
 
 function collapseWhitespace(text: string): string {
   return text.replace(/[\t\n\r\f ]+/g, " ");
+}
+
+/**
+ * Serializes a text run without letting HTML whitespace collapsing change it:
+ * tabs, newlines and multi/leading/trailing spaces become marker spans the
+ * importer turns back into the exact characters.
+ */
+function inlineTextHtml(text: string): string {
+  let out = "";
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === "\t") {
+      out += '<span data-dsh-tab="1">\t</span>';
+      index += 1;
+      continue;
+    }
+    if (char === "\n") {
+      out += '<span data-dsh-newline="1"></span>';
+      index += 1;
+      continue;
+    }
+    if (char === " ") {
+      let end = index;
+      while (text[end] === " ") end += 1;
+      const run = end - index;
+      if (run === 1 && index > 0 && end < text.length) out += " ";
+      else
+        out += `<span data-dsh-space="${run}">${"\u00A0".repeat(run)}</span>`;
+      index = end;
+      continue;
+    }
+    let end = index;
+    while (
+      end < text.length &&
+      text[end] !== "\t" &&
+      text[end] !== "\n" &&
+      text[end] !== " "
+    ) {
+      end += 1;
+    }
+    out += escapeHtml(text.slice(index, end));
+    index = end;
+  }
+  return out;
 }
 
 function fromDomNode(node: Node): HtmlNode | undefined {
@@ -784,6 +830,8 @@ class HtmlImporter {
   private readonly pendingNotes: PendingNote[] = [];
   private readonly pendingComments: PendingComment[] = [];
   private usedFallback = false;
+  /** Set when the document was produced by this exporter. */
+  private preserveWhitespace = false;
 
   constructor(private readonly ctx: DocumentContext) {}
 
@@ -795,6 +843,8 @@ class HtmlImporter {
     this.usedFallback = usedFallback;
     this.collectAnnotations(root);
     const body = bodyOf(root);
+    this.preserveWhitespace =
+      attrOf(body, "data-dsh-whitespace") === "preserve";
     for (const child of body.children ?? []) {
       if (child.kind === "element" && child.name && HEAD_TAGS.has(child.name))
         continue;
@@ -827,13 +877,16 @@ class HtmlImporter {
   }
 
   private collectAnnotations(root: HtmlNode): void {
-    const notesSection = findElement(
+    // A document can carry both a footnote section and an endnote section. Every
+    // such section is an annotation container; missing one would import its text
+    // into the body.
+    const notesSections = findAllElements(
       root,
       (node) =>
         (hasClass(node, "dsh-footnotes") || hasClass(node, "dsh-endnotes")) &&
         (node.name === "section" || node.name === "div" || node.name === "ol"),
     );
-    if (notesSection) {
+    for (const notesSection of notesSections) {
       const type = hasClass(notesSection, "dsh-endnotes")
         ? "endnote"
         : "footnote";
@@ -898,6 +951,40 @@ class HtmlImporter {
     };
 
     if (HEAD_TAGS.has(name)) return;
+    if (name === "nav" && hasClass(node, "dsh-toc")) {
+      const clampLevel = (
+        value: string | undefined,
+        fallback: number,
+      ): number => {
+        const parsed = Number.parseInt(value ?? "", 10);
+        return Number.isFinite(parsed)
+          ? Math.max(1, Math.min(9, parsed))
+          : fallback;
+      };
+      const minLevel = clampLevel(attrOf(node, "data-toc-min-level"), 1);
+      const maxLevel = Math.max(
+        minLevel,
+        clampLevel(attrOf(node, "data-toc-max-level"), minLevel + 2),
+      );
+      const leader = attrOf(node, "data-toc-tab-leader");
+      target.push({
+        type: "toc",
+        id: this.ctx.next("toc"),
+        minLevel,
+        maxLevel,
+        hyperlinks: attrOf(node, "data-toc-hyperlinks") !== "false",
+        pageNumbers: attrOf(node, "data-toc-page-numbers") !== "false",
+        tabLeader:
+          leader === "none" || leader === "underscore" || leader === "hyphen"
+            ? leader
+            : "dot",
+        ...(attrOf(node, "data-toc-include-title") === "true"
+          ? { includeTitle: true }
+          : {}),
+      } satisfies TocBlock);
+      this.count("toc");
+      return;
+    }
     if (
       name === "html" ||
       name === "body" ||
@@ -1061,7 +1148,12 @@ class HtmlImporter {
     }
     const inlines = this.inlinesOfNodes(inlineNodes, {}, state);
     const props = paragraphPropsFromNode(node, state.blockquoteDepth);
-    if (inlines.length > 0)
+    // An empty <p></p> is a real empty paragraph; dropping it would change the
+    // document structure (and add/remove a line in the text projection).
+    if (
+      inlines.length > 0 ||
+      (blockNodes.length === 0 && (node.children ?? []).length === 0)
+    )
       target.push(makeParagraph(this.ctx, inlines, { props }));
     for (const child of blockNodes) this.convertNode(child, target, state);
   }
@@ -1431,7 +1523,7 @@ class HtmlImporter {
   ): Inline[] {
     const out: Inline[] = [];
     this.walkInline(nodes, base, out, state);
-    trimInlineWhitespace(out);
+    if (!this.preserveWhitespace) trimInlineWhitespace(out);
     return out;
   }
 
@@ -1485,6 +1577,19 @@ class HtmlImporter {
         continue;
       }
 
+      const spaceMarker = attrOf(node, "data-dsh-space");
+      if (spaceMarker !== undefined) {
+        const count = Math.max(
+          1,
+          Math.min(1024, Number.parseInt(spaceMarker, 10) || 1),
+        );
+        pushText(out, " ".repeat(count), props);
+        continue;
+      }
+      if (attrOf(node, "data-dsh-newline") !== undefined) {
+        pushText(out, "\n", props);
+        continue;
+      }
       if (hasClass(node, "dsh-page-break")) {
         out.push({ type: "break", kind: "page" });
         continue;
@@ -2169,6 +2274,14 @@ class HtmlWriter {
 
   body(): string {
     const out: string[] = [];
+    if (this.doc.sections.length > 1) {
+      this.losses.partial(
+        "sections.flattened",
+        "HTML has no multiple-section model: section breaks become page breaks and the document re-imports as one section",
+        undefined,
+        false,
+      );
+    }
     this.doc.sections.forEach((section, sectionIndex) => {
       if (sectionIndex > 0) {
         out.push(
@@ -2222,13 +2335,15 @@ class HtmlWriter {
   private block(block: Block, sectionIndex: number): string {
     if (block.type === "table") return this.table(block, sectionIndex);
     if (block.type === "toc") {
+      // The block and its options round-trip; the cached entries (and their page
+      // numbers) are regenerated by the layout engine instead of being stored.
       this.losses.partial(
         "toc",
-        "Table of contents is emitted as a placeholder; page numbers need the layout engine",
+        "Table of contents entries are regenerated by the layout engine; the cached entry text and page numbers are not stored",
         `section[${sectionIndex}]`,
-        false,
+        true,
       );
-      return `<nav class="dsh-toc" data-toc-min-level="${block.minLevel}" data-toc-max-level="${block.maxLevel}"></nav>`;
+      return `<nav class="dsh-toc" data-toc-min-level="${block.minLevel}" data-toc-max-level="${block.maxLevel}" data-toc-hyperlinks="${block.hyperlinks}" data-toc-page-numbers="${block.pageNumbers}" data-toc-tab-leader="${block.tabLeader}" data-toc-include-title="${block.includeTitle === true}"></nav>`;
     }
     return this.paragraph(block, sectionIndex);
   }
@@ -2314,7 +2429,9 @@ class HtmlWriter {
           closeLink();
         }
         const text =
-          context === "pre" ? escapeHtml(inline.text) : escapeHtml(inline.text);
+          context === "pre"
+            ? escapeHtml(inline.text)
+            : inlineTextHtml(inline.text);
         out += this.runWrapper(text, props, inline.props.revision);
         continue;
       }
@@ -2510,7 +2627,18 @@ class HtmlWriter {
             cellIndex += 1
           ) {
             const cell = row.cells[cellIndex];
-            if (cell.props.vMerge === "continue") continue;
+            if (cell.props.vMerge === "continue") {
+              // A continuation cell is represented by the rowspan of its anchor.
+              // If no earlier restart covers this column (e.g. the anchor row was
+              // deleted) the cell must be emitted or its content would vanish.
+              const anchored = rows
+                .slice(0, rows.indexOf(row))
+                .some(
+                  (earlier) =>
+                    earlier.cells[cellIndex]?.props.vMerge === "restart",
+                );
+              if (anchored) continue;
+            }
             const gridSpan = cell.props.gridSpan ?? 1;
             let rowSpan = 1;
             if (cell.props.vMerge === "restart") {
@@ -2538,14 +2666,16 @@ class HtmlWriter {
             const textParts: string[] = [];
             for (const block of cell.blocks) {
               if (block.type === "paragraph") {
-                textParts.push(this.inlineHtml(block.inlines, block, "p"));
+                // Wrap each block paragraph so cell content round-trips as
+                // separate paragraphs instead of one <br>-separated flow.
+                textParts.push(this.paragraph(block, sectionIndex));
               } else if (block.type === "table") {
                 textParts.push(this.table(block, sectionIndex));
               } else {
                 textParts.push("");
               }
             }
-            const content = textParts.join("<br />");
+            const content = textParts.join("");
             cells.push(
               `<${cellTag}${attrs.length > 0 ? ` ${attrs.join(" ")}` : ""}>${content}</${cellTag}>`,
             );
@@ -2700,7 +2830,9 @@ export async function exportHtml(
     writer.stylesheet(),
     "</style>",
     "</head>",
-    "<body>",
+    // The marker lets this importer round-trip paragraph boundary whitespace
+    // exactly instead of applying HTML's whitespace-collapsing rules.
+    '<body data-dsh-whitespace="preserve">',
     body,
     "</body>",
     "</html>",

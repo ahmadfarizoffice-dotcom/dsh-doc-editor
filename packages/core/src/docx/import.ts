@@ -20,7 +20,9 @@ import type {
 import { DOCUMENT_SCHEMA_VERSION } from "../model/types.js";
 import { createDefaultStyles } from "../model/create.js";
 import { makeIdFactory } from "../model/ids.js";
+import { blocksText } from "../model/text.js";
 import { readPackage, readText, resolvePartPath } from "./package.js";
+import { FormatError } from "../formats/types.js";
 import {
   NS,
   all,
@@ -253,10 +255,12 @@ export async function importDocx(
   bytes: Buffer | Uint8Array,
   options: ImportOptions = {},
 ): Promise<ImportResult> {
-  const pkg = await readPackage(bytes);
+  const label = options.fileName ? `"${options.fileName}"` : "the document";
+  const pkg = await readPackage(bytes, { fileName: options.fileName });
   if (pkg.isEncrypted) {
-    throw new Error(
-      "This file is an OLE compound document (encrypted DOCX or legacy .doc). Decrypt it, or convert it with the legacy DOC importer.",
+    throw new FormatError(
+      "FORMAT_UNSUPPORTED",
+      `${label} is an OLE compound document (encrypted DOCX or legacy .doc). Decrypt it, or convert it with the legacy DOC importer.`,
     );
   }
   const parts = pkg.parts;
@@ -270,10 +274,12 @@ export async function importDocx(
       break;
     }
   }
+  validateContentTypes(parts, mainPath, label);
   const mainXml = readText(parts, mainPath);
   if (!mainXml)
-    throw new Error(
-      `Package does not contain a main document part (looked for ${mainPath})`,
+    throw new FormatError(
+      "FORMAT_CORRUPT",
+      `${label} does not contain a Word main document part (looked for ${mainPath})`,
     );
 
   const documentPartDir = mainPath.split("/").slice(0, -1).join("/");
@@ -429,7 +435,11 @@ export async function importDocx(
   // Body
   const documentXml = parseXml(mainXml, mainPath);
   const bodyElement = first(documentXml.documentElement, NS.w, "body");
-  if (!bodyElement) throw new Error("Main document part has no w:body element");
+  if (!bodyElement)
+    throw new FormatError(
+      "FORMAT_CORRUPT",
+      `${label} main document part (${mainPath}) has no w:body element`,
+    );
   const bodyChildren = childElements(bodyElement);
 
   const tocRanges = findTocRanges(bodyChildren);
@@ -446,6 +456,8 @@ export async function importDocx(
   interface SectionDraft {
     blocks: Block[];
     sector: SectionSector | undefined;
+    /** True when the section is delimited by explicit section properties. */
+    explicit: boolean;
   }
   const drafts: SectionDraft[] = [];
   let currentBlocks: Block[] = [];
@@ -461,7 +473,11 @@ export async function importDocx(
     const element = bodyChildren[index];
     const name = localNameOf(element);
     if (name === "sectPr") {
-      drafts.push({ blocks: currentBlocks, sector: { element, props: {} } });
+      drafts.push({
+        blocks: currentBlocks,
+        sector: { element, props: {} },
+        explicit: true,
+      });
       currentBlocks = [];
       sawFinalSectPr = true;
       continue;
@@ -478,9 +494,34 @@ export async function importDocx(
         },
         `body/p[${index}]`,
       );
+      const previous = currentBlocks[currentBlocks.length - 1];
+      // The exporter (like Word) marks the end of a section whose last block is
+      // a table, or of an empty section, with a run-less paragraph that only
+      // carries w:sectPr. Such a carrier is not body content; dropping it keeps
+      // the model structure intact instead of injecting an empty paragraph.
+      const carrierOnly =
+        parsed.paragraph.inlines.length === 0 &&
+        !childElements(element).some((child) => localNameOf(child) !== "pPr");
+      if (
+        parsed.sector &&
+        carrierOnly &&
+        (currentBlocks.length === 0 || previous?.type !== "paragraph")
+      ) {
+        drafts.push({
+          blocks: currentBlocks,
+          sector: parsed.sector,
+          explicit: true,
+        });
+        currentBlocks = [];
+        continue;
+      }
       currentBlocks.push(parsed.paragraph);
       if (parsed.sector) {
-        drafts.push({ blocks: currentBlocks, sector: parsed.sector });
+        drafts.push({
+          blocks: currentBlocks,
+          sector: parsed.sector,
+          explicit: true,
+        });
         currentBlocks = [];
       }
       continue;
@@ -534,7 +575,7 @@ export async function importDocx(
   }
 
   if (currentBlocks.length > 0 || drafts.length === 0) {
-    drafts.push({ blocks: currentBlocks, sector: undefined });
+    drafts.push({ blocks: currentBlocks, sector: undefined, explicit: false });
   }
   if (!sawFinalSectPr && drafts.length > 0) {
     // No explicit final sectPr: use defaults for the last section.
@@ -548,6 +589,21 @@ export async function importDocx(
   let previousHeaders: HeaderFooterSet = {};
   let previousFooters: HeaderFooterSet = {};
   let nextBreak: Section["breakBefore"] = "nextPage";
+
+  /**
+   * Word inherits a header/footer part into later sections by reference. The
+   * model stores one object per section, so an inherited copy must receive fresh
+   * part/block ids to keep structural ids globally unique.
+   */
+  const inheritPart = (
+    part: HeaderFooter | undefined,
+  ): HeaderFooter | undefined => {
+    if (!part) return undefined;
+    const clone = structuredClone(part);
+    clone.id = idFactory.next("hf");
+    rekeyBlockIds(idFactory, clone.blocks);
+    return clone;
+  };
 
   const parseHeaderFooterPart = (
     partPath: string,
@@ -614,38 +670,14 @@ export async function importDocx(
 
     // Inherit missing variants from the previous section (Word behaviour).
     const effectiveHeaders: HeaderFooterSet = {
-      default:
-        headers.default ??
-        (previousHeaders.default
-          ? structuredClone(previousHeaders.default)
-          : undefined),
-      first:
-        headers.first ??
-        (previousHeaders.first
-          ? structuredClone(previousHeaders.first)
-          : undefined),
-      even:
-        headers.even ??
-        (previousHeaders.even
-          ? structuredClone(previousHeaders.even)
-          : undefined),
+      default: headers.default ?? inheritPart(previousHeaders.default),
+      first: headers.first ?? inheritPart(previousHeaders.first),
+      even: headers.even ?? inheritPart(previousHeaders.even),
     };
     const effectiveFooters: HeaderFooterSet = {
-      default:
-        footers.default ??
-        (previousFooters.default
-          ? structuredClone(previousFooters.default)
-          : undefined),
-      first:
-        footers.first ??
-        (previousFooters.first
-          ? structuredClone(previousFooters.first)
-          : undefined),
-      even:
-        footers.even ??
-        (previousFooters.even
-          ? structuredClone(previousFooters.even)
-          : undefined),
+      default: footers.default ?? inheritPart(previousFooters.default),
+      first: footers.first ?? inheritPart(previousFooters.first),
+      even: footers.even ?? inheritPart(previousFooters.even),
     };
     previousHeaders = effectiveHeaders;
     previousFooters = effectiveFooters;
@@ -653,7 +685,9 @@ export async function importDocx(
     const section: Section = {
       id: idFactory.next("s"),
       blocks:
-        draft.blocks.length > 0 ? draft.blocks : [emptyParagraph(idFactory)],
+        draft.explicit || draft.blocks.length > 0
+          ? draft.blocks
+          : [emptyParagraph(idFactory)],
       page: skeleton.page,
       columns: skeleton.columns,
       headers: effectiveHeaders,
@@ -837,6 +871,20 @@ export async function importDocx(
     unknownElements,
     unmappedParts,
   });
+  // XML 1.0 cannot carry lone UTF-16 surrogates, so they survive a DOCX
+  // round-trip only as U+FFFD. Report that explicitly instead of pretending the
+  // text was preserved (the JSON snapshot keeps the original code units).
+  const replacedTexts: string[] = documentTextSectionsForImport(document);
+  if (replacedTexts.some((text) => text.includes("\uFFFD"))) {
+    report.losses.push({
+      feature: "text.unicode",
+      level: "partial",
+      reason:
+        "U+FFFD replacement characters are present: lone surrogate code units cannot be represented in XML and were replaced",
+      preserved: false,
+    });
+    report.transparent = false;
+  }
   document.compatibility = report;
 
   return {
@@ -851,6 +899,107 @@ export async function importDocx(
     packageDigest: pkg.digest,
     unmappedParts,
   };
+}
+
+/** Text of every body, header/footer and note part, used for fidelity checks. */
+function documentTextSectionsForImport(doc: DocDocument): string[] {
+  const parts: string[] = [];
+  for (const section of doc.sections) {
+    parts.push(blocksText(section.blocks));
+    for (const set of [section.headers, section.footers]) {
+      for (const variant of ["default", "first", "even"] as const) {
+        const part = set[variant];
+        if (part) parts.push(blocksText(part.blocks));
+      }
+    }
+  }
+  for (const shape of doc.shapes) {
+    if (shape.kind === "textbox") parts.push(blocksText(shape.blocks));
+  }
+  for (const note of [...doc.footnotes, ...doc.endnotes]) {
+    parts.push(blocksText(note.blocks));
+  }
+  return parts;
+}
+
+/** Assigns fresh ids to a cloned block tree (header/footer inheritance). */
+function rekeyBlockIds(
+  idFactory: { next: (prefix: string) => string },
+  blocks: Block[],
+): void {
+  for (const block of blocks) {
+    block.id = idFactory.next(
+      block.type === "table" ? "tbl" : block.type === "toc" ? "toc" : "p",
+    );
+    if (block.type === "table") {
+      for (const row of block.rows) {
+        row.id = idFactory.next("row");
+        for (const cell of row.cells) {
+          cell.id = idFactory.next("cell");
+          rekeyBlockIds(idFactory, cell.blocks);
+        }
+      }
+    }
+  }
+}
+
+const WORD_MAIN_CONTENT_TYPES = new Set([
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml",
+  "application/vnd.ms-word.document.macroenabled.main+xml",
+  "application/vnd.ms-word.template.macroenabledtemplate.main+xml",
+]);
+
+/**
+ * A DOCX package must declare its WordprocessingML main part. Packages without
+ * a sane `[Content_Types].xml` are rejected instead of being imported as if the
+ * declaration were optional.
+ */
+function validateContentTypes(
+  parts: Map<string, Buffer>,
+  mainPath: string,
+  label: string,
+): void {
+  const xml = readText(parts, "[Content_Types].xml");
+  if (!xml) {
+    throw new FormatError(
+      "FORMAT_CORRUPT",
+      `${label} is missing [Content_Types].xml and does not declare its main document part`,
+    );
+  }
+  let document;
+  try {
+    document = parseXml(xml, "[Content_Types].xml");
+  } catch {
+    throw new FormatError(
+      "FORMAT_CORRUPT",
+      `${label} has an unreadable [Content_Types].xml`,
+    );
+  }
+  const root = document.documentElement;
+  if (!root || localNameOf(root) !== "Types") {
+    throw new FormatError(
+      "FORMAT_CORRUPT",
+      `${label} has a malformed [Content_Types].xml (no Types root element)`,
+    );
+  }
+  const normalizedMain = mainPath.replace(/^\/+/, "").toLowerCase();
+  let declared = false;
+  for (const child of childElements(root)) {
+    if (localNameOf(child) !== "Override") continue;
+    const target = (child.getAttribute("PartName") ?? "")
+      .replace(/^\/+/, "")
+      .toLowerCase();
+    if (target !== normalizedMain) continue;
+    const contentType = (child.getAttribute("ContentType") ?? "").toLowerCase();
+    if (WORD_MAIN_CONTENT_TYPES.has(contentType)) declared = true;
+  }
+  if (!declared) {
+    throw new FormatError(
+      "FORMAT_CORRUPT",
+      `${label} does not declare a WordprocessingML main document part (${mainPath}) in [Content_Types].xml`,
+    );
+  }
 }
 
 function emptyParagraph(idFactory: {

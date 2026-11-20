@@ -1,4 +1,4 @@
-# Feature inventory
+﻿# Feature inventory
 
 Status legend: **✅ implemented** (model + engine + UI/API wired and tested),
 **◐ partial** (implemented with documented fidelity limits), **✖ not
@@ -168,7 +168,7 @@ changes itself and never replaces HTML.
 
 ## 8. MCP server and Harness plugin
 
-**MCP server:** 50 tools, 8 resources, 8 prompts, typed zod schemas, JSON Schema
+**MCP server:** 52 tools, 8 resources, 8 prompts, typed zod schemas, JSON Schema
 manifest, workspace confinement, read-only mode, audit logging,
 destructive-operation annotations — **✅** (see [MCP.md](MCP.md)).
 

@@ -27,3 +27,22 @@ export {
 export { convert } from "./convert/index.js";
 export { layoutDocument } from "./layout/index.js";
 export { renderHtml, renderPdf } from "./render/index.js";
+export {
+  clearLibreOfficeCache,
+  classifyLibreOfficeCandidate,
+  comparePdfEngines,
+  convertWithLibreOffice,
+  countPdfPages,
+  detectLibreOffice,
+  libreOfficeCandidates,
+  libreOfficeStandardPaths,
+  normalizeConversionTimeout,
+  renderPdfWithLibreOffice,
+  resolveConversionFormat,
+  supportedLibreOfficeFormats,
+  DEFAULT_CONVERSION_TIMEOUT_MS,
+  DEFAULT_DETECTION_TIMEOUT_MS,
+  LIBREOFFICE_CONVERSION_FORMATS,
+  LIBREOFFICE_INSTALL_HINT,
+  LibreOfficeError,
+} from "./engine/libreoffice.js";

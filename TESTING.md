@@ -1,4 +1,4 @@
-﻿# Testing
+# Testing
 
 Everything below is executed locally and in CI. Commands are run from the
 repository root after `pnpm install`.
@@ -176,3 +176,97 @@ CI fails when tests fail; there is no `continue-on-error` on test steps.
    section, and the page break before "Page-break verification page".
 5. Export PDF and compare print output with the preview.
 6. Use the "Roundtrip" CLI command for a text-level fidelity check.
+
+## Quality gates and how to run them
+
+The rulebook is [`docs/QUALITY-GATES.md`](docs/QUALITY-GATES.md): gate
+definitions, coverage floors, the MC/DC approximation and the acceptance rules.
+The go/no-go instrument is
+[`docs/RELEASE-CHECKLIST.md`](docs/RELEASE-CHECKLIST.md). Read both before
+calling anything "release ready".
+
+### Commands
+
+| What                         | Command                                                                                                                                     | Notes                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Core/apps/fixture suites     | `pnpm test` (or `npx --no-install vitest run`)                                                                                              | `pnpm` is absent on some Windows machines; the `npx` form is verified here. |
+| Plugin suite                 | `node --test "dsh-plugin/test/*.test.mjs"` (or `pnpm run test:plugin`)                                                                      | Uses Node's built-in runner, not vitest.                                    |
+| Fixture regression           | `pnpm run test:fixture`                                                                                                                     | 5 tests against the golden DOCX.                                            |
+| Render regression            | `npx --no-install vitest run test/render`                                                                                                   | 1 test, 9 pages, HTML/SVG/PDF.                                              |
+| Coverage gate                | `node tools/coverage.mjs` (or `pnpm run coverage:gate`)                                                                                     | Real v8 coverage; exits 0 when the tooling is genuinely missing.            |
+| Coverage gate (machine)      | `node tools/coverage.mjs --json`                                                                                                            | JSON only; safe to pipe.                                                    |
+| Release docs gate            | `node tools/coverage.mjs --docs` (or `pnpm run quality:docs`)                                                                               | Validates both docs and their required headings.                            |
+| Seeded quality suites        | `FUZZ_REPORT_DIR=coverage/fuzz FUZZ_SEED=1337 FUZZ_CASES=150 npx --no-install vitest run packages/core/test/fuzz` (or `pnpm run test:fuzz`) | Four suites (property, differential, anomaly, MC/DC); currently red.        |
+| Real-browser ribbon evidence | `node tools/measure-ribbon.mjs --url http://127.0.0.1:4399/ --height 900`                                                                   | Needs Chrome and a served app.                                              |
+| Real-browser panel evidence  | `node tools/probe-panel.mjs --url http://127.0.0.1:4399/ --height 900`                                                                      | Needs Chrome and a served app.                                              |
+
+`tools/e2e-panel.mjs` is referenced in earlier discussions but **does not
+exist** in this repository today. The CDP evidence comes from
+`tools/measure-ribbon.mjs` and `tools/probe-panel.mjs`; when an `e2e-panel.mjs`
+lands, run it as `node tools/e2e-panel.mjs --url http://127.0.0.1:4399/` and add
+its counts here.
+
+Four seeded quality suites **do** exist under `packages/core/test/fuzz/`:
+property fuzzing (`roundtrip.property.test.ts`, 150 documents), differential
+(`differential.test.ts`, 150 op scripts comparing service calls with the tool
+layer), anomaly/fault injection (`anomaly.test.ts`, 150 hostile inputs with a
+10 s per-case limit) and MC/DC decision tables (`mcdc.test.ts`, 8 cases over 5
+predicates). All four are currently red; see the measured rows below. Set
+`FUZZ_REPORT_DIR=coverage/fuzz` to make each suite write a case-summary JSON.
+The CI `fuzz` job walks `test/quality`, `test/fuzz` and
+`packages/core/test/fuzz` and runs what it finds.
+
+### Measured results
+
+Everything below was executed on 2026-11-19 (Windows, Node `v24.21.0`,
+vitest `3.2.7`, `@vitest/coverage-v8` `3.2.7`). Items without a measurement are
+marked `NOT MEASURED` — they were not run, and guessing is not evidence.
+
+| Command                                                                                                           | Result                                                                                                                                                                                                                            |
+| ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npx --no-install vitest run` (baseline, 17:11)                                                                   | **21 files / 126 tests passed**, 0 failed, 0 skipped, exit 0                                                                                                                                                                      |
+| `node --test "dsh-plugin/test/*.test.mjs"`                                                                        | **tests 102, pass 102, fail 0, skipped 0, todo 0**, exit 0                                                                                                                                                                        |
+| `node tools/coverage.mjs` (documented baseline run)                                                               | **status `ok`, all floors met, exit 0** (numbers below)                                                                                                                                                                           |
+| `node tools/coverage.mjs --docs`                                                                                  | `release docs OK: 2 files, 16 required headings present.`, exit 0                                                                                                                                                                 |
+| `node tools/coverage.mjs` (whole workspace, 17:50)                                                                | **27 files / 603 tests: 4 failed, 599 passed, exit 1**, no coverage numbers emitted — the four failures are the quality suites; see the note below                                                                                |
+| `node tools/build-dsh-plugin.mjs`                                                                                 | `NOT MEASURED` — building writes `dsh-plugin/**`, outside this task's write scope                                                                                                                                                 |
+| Plugin bundle size budget (≤ 6 MiB)                                                                               | `NOT MEASURED` (depends on the build above)                                                                                                                                                                                       |
+| `node tools/measure-ribbon.mjs` / `probe-panel.mjs`                                                               | `NOT MEASURED` — needs Chrome plus a served app                                                                                                                                                                                   |
+| `FUZZ_REPORT_DIR=coverage/fuzz FUZZ_SEED=1337 FUZZ_CASES=150 npx --no-install vitest run packages/core/test/fuzz` | **4 files failed, exit 1**: property 108/150 passed (42 failed), differential 2/150 (137 failed, 11 documented), anomaly 69/150 (81 failed), MC/DC 4/8 (4 failed)                                                                 |
+| `npx --no-install vitest run packages/core/test/engine`                                                           | **1 failed / 470 passed, exit 1**; the failing case assumes no LibreOffice on the real PATH (this machine has one installed). It passed in the 17:50 whole-suite run, so treat it as environment-dependent, not a stable failure. |
+| Differential / chaos suites                                                                                       | measured above (both red)                                                                                                                                                                                                         |
+| 150-case per-feature suites                                                                                       | `NOT MEASURED` — no per-feature suite exists (the 150-case fuzz suite covers documents, not panel features)                                                                                                                       |
+
+Coverage from the documented baseline run (`QUALITY-GATES.md` §7.3 lists the
+exact file list):
+
+| Scope                       | Statements | Branches | Functions | Lines  |
+| --------------------------- | ---------- | -------- | --------- | ------ |
+| `packages/core/src/model`   | 49.18%     | 69.90%   | 51.37%    | 49.18% |
+| `packages/core/src/service` | 41.13%     | 58.04%   | 51.00%    | 41.13% |
+| `packages/core/src` (all)   | 69.19%     | 67.73%   | 72.79%    | 69.19% |
+
+**Moving-tree warning.** Other agents were writing to this same checkout while
+these numbers were taken. The tree grew from 21 to 27 vitest test files during
+authoring: the LibreOffice suites (`packages/core/test/engine/libreoffice*.test.ts`,
+now largely green) and the four seeded quality suites in
+`packages/core/test/fuzz/` (all red). Those keep the whole-workspace run from
+going green on this machine, so `node tools/coverage.mjs` correctly exits 1 with
+`status: "tests_failed"` instead of reporting numbers. The coverage table above
+is therefore from the 21-file baseline run, which excludes those suites. Re-run
+`node tools/coverage.mjs` once the tree is green and ratchet the floors in
+`docs/QUALITY-GATES.md` upward if coverage improved.
+
+### What cannot be automated here
+
+- **LibreOffice detection/conversion** depends on an optional external binary
+  and on Windows/Linux process semantics; `node tools/libreoffice-smoke.mjs`
+  reports honestly when the engine is absent, but it is a smoke tool, not a
+  gate.
+- **Ribbon drag, icon colours, chooser, shortcuts, selection and typing** need
+  a human looking at a rendered panel. The CDP probes measure geometry; the
+  human steps live in `docs/RELEASE-CHECKLIST.md` §5 and are `NOT MEASURED`
+  unless an operator runs them.
+- **MC/DC** cannot be measured by JS coverage tools. It is approximated by
+  decision tables (`QUALITY-GATES.md` §5); today
+  `coverage/decision-table.json` is an explicit empty stub.

@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import { createHash } from "node:crypto";
+import { FormatError } from "../formats/types.js";
 
 export interface PackagePart {
   path: string;
@@ -16,30 +17,87 @@ export interface OoxmlPackage {
 
 const MAX_PART_BYTES = 256 * 1024 * 1024;
 
-/** Reads an OOXML package into a part map, preserving every entry verbatim. */
+export interface ReadPackageOptions {
+  /** Original file name, used only for typed error messages. */
+  fileName?: string;
+}
+
+function packageLabel(fileName?: string): string {
+  return fileName ? `"${fileName}"` : "the document";
+}
+
+/**
+ * Reads an OOXML package into a part map, preserving every entry verbatim.
+ *
+ * Every corruption path is translated into a typed `FormatError` naming the
+ * document, never the raw library message.
+ */
 export async function readPackage(
   bytes: Buffer | Uint8Array,
+  options: ReadPackageOptions = {},
 ): Promise<OoxmlPackage> {
   const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
   const digest = createHash("sha256").update(buffer).digest("hex");
+  const label = packageLabel(options.fileName);
   // OLE compound file magic: encrypted OOXML and legacy binary formats.
   const isOle = buffer.length >= 8 && buffer.readUInt32BE(0) === 0xd0cf11e0;
   if (isOle) {
     return { parts: new Map(), digest, isEncrypted: true };
   }
-  const zip = await JSZip.loadAsync(buffer, { checkCRC32: false });
+  if (buffer.length < 22 || buffer.readUInt32LE(0) !== 0x04034b50) {
+    throw new FormatError(
+      "FORMAT_CORRUPT",
+      `${label} is not a DOCX/OOXML ZIP package (the archive is empty, truncated or has no ZIP header)`,
+    );
+  }
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(buffer, { checkCRC32: false });
+  } catch {
+    throw new FormatError(
+      "FORMAT_CORRUPT",
+      `${label} is not a readable DOCX/OOXML ZIP package (corrupted, truncated or not a ZIP archive)`,
+    );
+  }
   const parts = new Map<string, Buffer>();
   const entries = Object.values(zip.files).filter((entry) => !entry.dir);
   for (const entry of entries) {
     // Reject path traversal in hostile packages.
     const normalized = entry.name.replace(/\\/g, "/");
     if (normalized.startsWith("/") || normalized.split("/").includes("..")) {
-      throw new Error(`Package entry escapes the package root: ${entry.name}`);
+      throw new FormatError(
+        "FORMAT_CORRUPT",
+        `${label} contains a package entry that escapes the package root (${entry.name})`,
+      );
     }
-    const data = await entry.async("nodebuffer");
+    const declared = (
+      entry as unknown as { _data?: { uncompressedSize?: number } }
+    )._data?.uncompressedSize;
+    if (typeof declared === "number" && declared > MAX_PART_BYTES) {
+      throw new FormatError(
+        "FORMAT_TOO_LARGE",
+        `${label} declares a ${declared} byte part (${entry.name}), above the ${MAX_PART_BYTES} byte limit`,
+      );
+    }
+    let data: Buffer;
+    try {
+      data = await entry.async("nodebuffer");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const bomb = /size mismatch|uncompressed|invalid size|too large/i.test(
+        message,
+      );
+      throw new FormatError(
+        bomb ? "FORMAT_BOMB" : "FORMAT_CORRUPT",
+        bomb
+          ? `${label} contains a part (${entry.name}) whose declared uncompressed size does not match its payload (ZIP bomb shape)`
+          : `${label} contains an unreadable part (${entry.name})`,
+      );
+    }
     if (data.byteLength > MAX_PART_BYTES) {
-      throw new Error(
-        `Package part too large: ${entry.name} (${data.byteLength} bytes)`,
+      throw new FormatError(
+        "FORMAT_TOO_LARGE",
+        `${label} contains a part too large to import (${entry.name}, ${data.byteLength} bytes)`,
       );
     }
     parts.set(normalized, Buffer.from(data));
