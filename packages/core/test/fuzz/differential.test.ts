@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Differential suite, "SQL logic test" style.
  *
  * Each generated op script is executed twice on two fresh, identical documents:
@@ -373,6 +373,17 @@ interface ChainResult {
   losses: Array<{ feature: string; level: string; preserved?: boolean }>;
 }
 
+/**
+ * Runs the DOCX -> middle -> DOCX chain through the *format adapters*
+ * (`exportAny` / `importAny`), not through the service's engine routing.
+ *
+ * This is deliberate: the suite measures adapter fidelity, which must stay
+ * independent of the configured conversion engine. LibreOffice becoming the
+ * default engine for `convert()` / `exportDocument()` does not change these
+ * outputs, so the documented-loss expectations below remain valid instead of
+ * being waived. LibreOffice's own fidelity is measured separately by
+ * `packages/core/test/engine/libreoffice.test.ts` and `tools/engine-matrix.mjs`.
+ */
 async function runChain(
   document: DocDocument,
   middleFormat: "odt" | "html",
@@ -585,6 +596,16 @@ describe(`differential fuzz (seed ${config.seed}, ${config.cases} op scripts)`, 
         );
       }
       expect(summary.failed).toBe(0);
+      // The canonical run has exactly 68 documented loss cases. They are not
+      // waived: each one is accepted only when a reported loss explains every
+      // divergence probe (see `explainLosses`), and `documentedCount` counts the
+      // individual chain entries behind them. The chain runs through the format
+      // adapters, so the default-engine change must not move this number; a
+      // different seed/case count is allowed to have its own total.
+      if (config.seed === 1337 && config.cases === 150) {
+        expect(summary.documented).toBe(68);
+        expect(documentedCount).toBeGreaterThanOrEqual(summary.documented);
+      }
       expect(documentedCount).toBeGreaterThanOrEqual(0);
     },
     TEST_TIMEOUT,

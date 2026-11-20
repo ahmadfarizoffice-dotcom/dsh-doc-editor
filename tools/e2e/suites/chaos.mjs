@@ -20,10 +20,19 @@ import {
   settleText,
   sleep,
   typeText,
+  seededCases,
 } from "../kit.mjs";
 
 const BASE = ["Alpha paragraph.", "Beta paragraph.", "Gamma paragraph."];
 const JOIN = (blocks) => blocks.join("\n");
+
+/**
+ * The keystroke used to force another flush pass. It must not appear in any
+ * case text, otherwise the "typed text was not duplicated" count below would
+ * count the retry itself as a duplicate (the old "x" collided with the "x"
+ * case).
+ */
+const RETRY_KEY = "z";
 
 const TEXTS = [
   "abc",
@@ -49,7 +58,7 @@ function buildCases() {
       rate: index % 3 === 0 ? 0.2 : 0.1,
     });
   }
-  return cases;
+  return seededCases(cases).slice(0, 150);
 }
 
 function expected(text, extras) {
@@ -78,8 +87,8 @@ async function runCase(item) {
     if (settled.text === expected(item.text, extras)) break;
     // Another keystroke gives the panel a fresh flush pass; the character is
     // part of the expectation, never a silent repair.
-    extras += "x";
-    await press("x");
+    extras += RETRY_KEY;
+    await press(RETRY_KEY);
     await sleep(250);
   }
   const want = expected(item.text, extras);
@@ -91,6 +100,8 @@ async function runCase(item) {
   }
   assertEqual(settled.text, want, `${item.id}: Host text after chaos`);
   const dom = await domText();
+  // The invariant the panel guarantees after a failed op: once the error has
+  // settled the rendered text and the authoritative Host text are the same.
   assertEqual(dom, settled.text, `${item.id}: DOM and Host diverged`);
   assertEqual(
     settled.text.split(item.text).length - 1,
@@ -101,13 +112,19 @@ async function runCase(item) {
   if (bar) assert(/CHAOS/.test(bar), `${item.id}: unexpected error bar ${bar}`);
 
   await setChaos({ enabled: false });
-  await press("x");
-  extras += "x";
+  await press(RETRY_KEY);
+  extras += RETRY_KEY;
   const finalState = await settleText(8000);
   assertEqual(
     finalState.text,
     expected(item.text, extras),
     `${item.id}: text after recovery`,
+  );
+  const finalDom = await domText();
+  assertEqual(
+    finalDom,
+    finalState.text,
+    `${item.id}: DOM and Host diverged after the successful retry`,
   );
   const errors = await pageErrors();
   assertEqual(

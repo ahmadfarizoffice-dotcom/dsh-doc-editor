@@ -19,6 +19,7 @@ import {
   settleText,
   sleep,
   typeText,
+  seededCases,
 } from "../kit.mjs";
 
 const BASE = ["Alpha paragraph.", "Beta paragraph.", "Gamma paragraph."];
@@ -63,7 +64,7 @@ function buildCases() {
       }
     }
   }
-  return cases.slice(0, 150);
+  return seededCases(cases).slice(0, 150);
 }
 
 function expectedText(payload, variant) {

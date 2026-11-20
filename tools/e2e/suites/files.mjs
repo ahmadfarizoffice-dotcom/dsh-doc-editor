@@ -23,6 +23,7 @@ import {
   submitDialog,
   waitForNet,
   waitForPage,
+  seededCases,
 } from "../kit.mjs";
 
 const BASE = ["Alpha paragraph.", "Beta paragraph.", "Gamma paragraph."];
@@ -175,7 +176,7 @@ function buildCases() {
       cases.push({ id: `${scenario.id}/${variant}`, scenario });
     }
   }
-  return cases.slice(0, 150);
+  return seededCases(cases).slice(0, 150);
 }
 
 async function runCase(item) {

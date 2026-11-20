@@ -172,7 +172,7 @@ elements.
 
 ## MCP server
 
-`tools/registry.ts` defines all 50 tools once with zod schemas. The MCP server
+`tools/registry.ts` defines all 53 tools once with zod schemas. The MCP server
 maps each descriptor to `McpServer.registerTool`, resources to
 `registerResource` (static + templates), and prompts to `registerPrompt` using
 the official `@modelcontextprotocol/sdk`. `apps/mcp/src/write-manifest.ts` emits

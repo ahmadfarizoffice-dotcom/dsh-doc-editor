@@ -17,6 +17,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   stat,
   writeFile,
@@ -30,7 +31,9 @@ import {
   convertWithLibreOffice,
   countPdfPages,
   detectLibreOffice,
+  disposeLibreOfficeProfiles,
   libreOfficeCandidates,
+  libreOfficeProfileDiagnostics,
   LibreOfficeError,
   renderPdfWithLibreOffice,
   resolveConversionFormat,
@@ -38,12 +41,22 @@ import {
   type LibreOfficeCandidate,
   type LibreOfficeDetection,
 } from "../../src/engine/libreoffice.js";
+import {
+  routeAfterFailure,
+  routeConversion,
+  type EnginePreference,
+} from "../../src/engine/routing.js";
 import { DocumentService } from "../../src/service/service.js";
+import { ServiceError } from "../../src/service/workspace.js";
+import { invokeTool } from "../../src/tools/registry.js";
+import { exportAny, importAny } from "../../src/formats/index.js";
+import { createDocument } from "../../src/model/create.js";
+import { documentText } from "../../src/model/text.js";
 
 /* ------------------------------------------------------------ fake soffice */
 
 const FAKE_SOFFICE_SOURCE = `#!/usr/bin/env node
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -52,6 +65,16 @@ const args = process.argv.slice(2);
 const versionMode = process.env.DSH_FAKE_VERSION_MODE || "ok";
 const convertMode = process.env.DSH_FAKE_MODE || "ok";
 const logFile = process.env.DSH_FAKE_LOG;
+// Proof that the binary was launched at all: the routing suite asserts this
+// file is absent for an "internal" engine preference.
+const spawnMarker = process.env.DSH_FAKE_SPAWN_MARKER;
+if (spawnMarker) {
+  try {
+    appendFileSync(spawnMarker, process.argv.slice(2).join(" ") + "\\n");
+  } catch {
+    // Marker writing is diagnostic only.
+  }
+}
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const profileArg = args.find((entry) => entry.startsWith("-env:UserInstallation="));
 let profilePath = null;
@@ -138,6 +161,41 @@ function writeOut(content) {
   mkdirSync(path.dirname(outFile), { recursive: true });
   writeFileSync(outFile, content);
 }
+// A one-shot transient failure, used to prove the shared-profile retry.
+const failOnceCounter = process.env.DSH_FAKE_FAIL_ONCE;
+if (failOnceCounter) {
+  let firstAttempt = false;
+  try {
+    if (!existsSync(failOnceCounter)) {
+      writeFileSync(failOnceCounter, "1");
+      firstAttempt = true;
+    }
+  } catch {
+    firstAttempt = false;
+  }
+  if (firstAttempt) {
+    console.error("FAKE_TRANSIENT_FAIL_ONCE");
+    process.exit(1);
+  }
+}
+// Deterministic model-derived outputs: the test pre-generates real DOCX/ODT/
+// RTF/HTML/PDF bytes and the fake copies them, so routing tests can compare
+// text fidelity without a real LibreOffice install.
+const artifactDir = process.env.DSH_FAKE_ARTIFACT_DIR;
+if (artifactDir && (convertMode === "artifact" || convertMode === "text-loss")) {
+  const name = (convertMode === "text-loss" ? "empty-" : "") + extension + ".bin";
+  const artifact = path.join(artifactDir, name);
+  try {
+    const bytes = readFileSync(artifact);
+    if (!outFile) process.exit(9);
+    mkdirSync(path.dirname(outFile), { recursive: true });
+    writeFileSync(outFile, bytes);
+    process.exit(0);
+  } catch (error) {
+    console.error("FAKE_ARTIFACT_MISSING " + artifact + " " + error.message);
+    process.exit(9);
+  }
+}
 if (convertMode === "sleep" || convertMode === "grandchild") {
   if (convertMode === "grandchild") {
     spawn(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], {
@@ -204,7 +262,24 @@ if (convertMode === "empty-stdout") {
   writeOut("%PDF-1.4 ok");
   process.exit(0);
 }
-writeOut("%PDF-1.4\\nfake " + filter + " " + process.pid + "\\n%%EOF\\n");
+if (extension === "pdf") {
+  const pages = Math.max(1, Number(process.env.DSH_FAKE_PAGES || "1"));
+  const pageObjects = [];
+  for (let index = 0; index < pages; index += 1) {
+    pageObjects.push(
+      (3 + index) +
+        " 0 obj\\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\\nendobj",
+    );
+  }
+  const kids = pageObjects.map((_, index) => (3 + index) + " 0 R").join(" ");
+  writeOut(
+    "%PDF-1.4\\n1 0 obj\\n<< /Type /Catalog /Pages 2 0 R >>\\nendobj\\n" +
+      "2 0 obj\\n<< /Type /Pages /Kids [" + kids + "] /Count " + pages + " >>\\nendobj\\n" +
+      pageObjects.join("\\n") + "\\n%%EOF\\n",
+  );
+} else {
+  writeOut("fake " + filter + " " + process.pid);
+}
 `;
 
 /* --------------------------------------------------------------- fixtures */
@@ -278,6 +353,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
+  await disposeLibreOfficeProfiles().catch(() => undefined);
   if (baseDir) await rm(baseDir, { recursive: true, force: true });
 });
 
@@ -1915,38 +1991,51 @@ addConversion("upper timeout boundary accepts quick conversion", async () => {
 
 /* --- cleanup, concurrency and command shape ---------------------------- */
 
-addConversion("temporary profile is unique, existed and removed", async () => {
-  const log = uniqueLog("cleanup-success");
-  const result = await convertWithLibreOffice({
-    inputPath: inputs.docx,
-    format: "pdf",
-    env: fakeEnv(log),
-    detection: validDetection,
-  });
-  const lines = await readLog(log);
-  const conversion = lines.find((line) => line.kind === "convert");
-  expect(conversion?.profileExisted).toBe(true);
-  expect(existsSync(conversion.profile)).toBe(false);
-  expect(result.userProfile).toBeTruthy();
-});
-
-addConversion("temporary profile removed after process failure", async () => {
-  const log = uniqueLog("cleanup-failure");
-  await expectCode(
-    convertWithLibreOffice({
+addConversion(
+  "shared profile existed before the process and is reused",
+  async () => {
+    const log = uniqueLog("cleanup-success");
+    const result = await convertWithLibreOffice({
       inputPath: inputs.docx,
       format: "pdf",
-      env: fakeEnv(log, { convert: "exit1" }),
+      env: fakeEnv(log),
       detection: validDetection,
-    }),
-    "ENGINE_FAILED",
-  );
-  const lines = await readLog(log);
-  const conversion = lines.find((line) => line.kind === "convert");
-  expect(existsSync(conversion.profile)).toBe(false);
-});
+    });
+    const lines = await readLog(log);
+    const conversion = lines.find((line) => line.kind === "convert");
+    expect(conversion?.profileExisted).toBe(true);
+    expect(result.userProfileMode).toBe("shared");
+    expect(result.profileReused).toBe(true);
+    // The shared profile is process-owned: it survives the conversion.
+    expect(existsSync(conversion.profile)).toBe(true);
+    expect(result.userProfile).toBeTruthy();
+    expect(result.conversionTempDirectory).toBeTruthy();
+    expect(existsSync(result.conversionTempDirectory)).toBe(false);
+  },
+);
 
-addConversion("temporary profile removed after timeout", async () => {
+addConversion(
+  "per-call output directory removed after process failure",
+  async () => {
+    const log = uniqueLog("cleanup-failure");
+    await expectCode(
+      convertWithLibreOffice({
+        inputPath: inputs.docx,
+        format: "pdf",
+        env: fakeEnv(log, { convert: "exit1" }),
+        detection: validDetection,
+      }),
+      "ENGINE_FAILED",
+    );
+    const lines = await readLog(log);
+    const conversion = lines.find((line) => line.kind === "convert");
+    expect(existsSync(path.dirname(conversion.outdir))).toBe(false);
+    // The shared profile is kept for the next conversion.
+    expect(existsSync(conversion.profile)).toBe(true);
+  },
+);
+
+addConversion("temporary directory removed after timeout", async () => {
   const log = uniqueLog("cleanup-timeout");
   await expectCode(
     convertWithLibreOffice({
@@ -1961,7 +2050,8 @@ addConversion("temporary profile removed after timeout", async () => {
   const lines = await readLog(log);
   const conversion = lines.find((line) => line.kind === "convert");
   expect(conversion).toBeDefined();
-  expect(existsSync(conversion.profile)).toBe(false);
+  expect(existsSync(path.dirname(conversion.outdir))).toBe(false);
+  expect(existsSync(conversion.profile)).toBe(true);
 });
 
 addConversion("five concurrent conversions use unique profiles", async () => {
@@ -1977,7 +2067,11 @@ addConversion("five concurrent conversions use unique profiles", async () => {
       }).catch((error: unknown) => error);
       const lines = await readLog(log);
       const conversion = lines.find((line) => line.kind === "convert");
-      return { result, profile: conversion?.profile as string };
+      return {
+        result,
+        profile: conversion?.profile as string,
+        profileExisted: conversion?.profileExisted as boolean,
+      };
     })(),
   );
   const results = await Promise.all(calls);
@@ -1986,8 +2080,19 @@ addConversion("five concurrent conversions use unique profiles", async () => {
     .filter((entry): entry is string => typeof entry === "string");
   expect(profiles).toHaveLength(5);
   expect(new Set(profiles).size).toBe(5);
+  // Exactly one conversion owns the shared profile; the four concurrent ones
+  // get isolated profiles that are removed afterwards.
+  const sharedProfile =
+    libreOfficeProfileDiagnostics().knownSharedProfiles.find((entry) =>
+      profiles.includes(entry),
+    );
+  expect(sharedProfile).toBeTruthy();
   for (const profile of profiles) {
-    expect(existsSync(profile)).toBe(false);
+    if (profile === sharedProfile) {
+      expect(existsSync(profile)).toBe(true);
+    } else {
+      expect(existsSync(profile)).toBe(false);
+    }
   }
 });
 
@@ -2020,7 +2125,7 @@ addConversion(
   },
 );
 
-addConversion("sequential conversions use distinct profiles", async () => {
+addConversion("sequential conversions reuse the shared profile", async () => {
   const profiles: string[] = [];
   for (const index of [0, 1, 2]) {
     const log = uniqueLog(`sequential-${index}`);
@@ -2031,10 +2136,39 @@ addConversion("sequential conversions use distinct profiles", async () => {
       detection: validDetection,
     });
     const lines = await readLog(log);
-    profiles.push(lines.find((line) => line.kind === "convert").profile);
+    const conversion = lines.find((line) => line.kind === "convert");
+    profiles.push(conversion.profile);
   }
-  expect(new Set(profiles).size).toBe(3);
+  expect(profiles).toHaveLength(3);
+  // One process-owned profile, reused: that is what keeps PDF export fast.
+  expect(new Set(profiles).size).toBe(1);
+  expect(profiles[0]).toContain("dsh-libreoffice-profile-");
 });
+
+addConversion(
+  "retries a transient shared-profile failure once with an isolated profile",
+  async () => {
+    const log = uniqueLog("retry-once");
+    caseCounter += 1;
+    const counter = path.join(root, `fail-once-${caseCounter}.counter`);
+    const result = await convertWithLibreOffice({
+      inputPath: inputs.docx,
+      format: "pdf",
+      env: fakeEnv(log, { extra: { DSH_FAKE_FAIL_ONCE: counter } }),
+      detection: validDetection,
+    });
+    expect(result.retried).toBe(true);
+    expect(result.attempts).toBe(2);
+    expect(result.userProfileMode).toBe("unique");
+    const conversions = (await readLog(log)).filter(
+      (line) => line.kind === "convert",
+    );
+    expect(conversions).toHaveLength(2);
+    expect(conversions[0].profile).toContain("dsh-libreoffice-profile-");
+    expect(conversions[1].profile).toContain("dsh-libreoffice-concurrent-");
+    expect(existsSync(conversions[1].profile)).toBe(false);
+  },
+);
 
 addConversion("command arguments carry the unique profile flag", async () => {
   const log = uniqueLog("args-profile");
@@ -2077,8 +2211,11 @@ addConversion("temporary directory is removed after success", async () => {
     env: fakeEnv(log),
     detection: validDetection,
   });
-  const profileDir = path.dirname(fileURLToPath(result.userProfile));
-  expect(existsSync(profileDir)).toBe(false);
+  expect(existsSync(result.conversionTempDirectory)).toBe(false);
+  // The shared profile is not a temporary directory: it is reused on purpose.
+  expect(existsSync(path.dirname(fileURLToPath(result.userProfile)))).toBe(
+    true,
+  );
 });
 
 addConversion("warnings are collected from stderr", async () => {
@@ -2619,7 +2756,7 @@ for (const [index, mode] of [
   "wrong-extension",
 ].entries()) {
   addError(
-    `failure cleanup #${index} ${mode} removes the profile`,
+    `failure cleanup #${index} ${mode} removes the per-call directory`,
     async () => {
       const { log } = await runFailingConversion({
         mode,
@@ -2631,23 +2768,26 @@ for (const [index, mode] of [
       const lines = await readLog(log);
       const conversion = lines.find((line) => line.kind === "convert");
       expect(conversion).toBeDefined();
-      expect(existsSync(conversion.profile)).toBe(false);
+      expect(existsSync(path.dirname(conversion.outdir))).toBe(false);
     },
   );
 }
 
 for (const [index, timeoutMs] of [200, 250, 300].entries()) {
-  addError(`timeout cleanup #${index} removes the profile`, async () => {
-    const { log } = await runFailingConversion({
-      mode: "sleep",
-      code: "ENGINE_TIMEOUT",
-      timeoutMs,
-    });
-    const lines = await readLog(log);
-    const conversion = lines.find((line) => line.kind === "convert");
-    expect(conversion).toBeDefined();
-    expect(existsSync(conversion.profile)).toBe(false);
-  });
+  addError(
+    `timeout cleanup #${index} removes the per-call directory`,
+    async () => {
+      const { log } = await runFailingConversion({
+        mode: "sleep",
+        code: "ENGINE_TIMEOUT",
+        timeoutMs,
+      });
+      const lines = await readLog(log);
+      const conversion = lines.find((line) => line.kind === "convert");
+      expect(conversion).toBeDefined();
+      expect(existsSync(path.dirname(conversion.outdir))).toBe(false);
+    },
+  );
 }
 
 for (const [index, mode] of ["exit1", "zero", "missing"].entries()) {
@@ -2754,6 +2894,762 @@ describe("LibreOffice differential PDF helpers", () => {
     expect(resolved.extension).toBe("html");
     expect(resolved.filter).toBe("HTML (StarWriter)");
     expect(resolved.convertTo).toBe("html:HTML (StarWriter)");
+  });
+});
+
+/* ================================================= engine routing (150) */
+
+/**
+ * The default engine is LibreOffice-first. These 150 table-driven cases are the
+ * complete cross product of
+ *
+ *   preference (auto | libreoffice | internal)
+ *   × availability (available | absent)
+ *   × 25 (target format, conversion outcome, page count) scenarios
+ *
+ * and assert the routing contract: the engine actually used, the typed
+ * `fallbackReason`, page counts and PDF magic bytes, that `internal` never
+ * spawns the binary (a marker file must be absent), and that the per-call
+ * temporary directories are removed.
+ */
+
+const ROUTING_TEXT = ["Routing alpha beta", "Routing gamma delta"];
+
+type RoutingMode = "ok" | "text-loss" | "exit1" | "sleep" | "empty";
+
+interface RoutingScenario {
+  format: string;
+  mode: RoutingMode;
+  pages: number;
+}
+
+interface RoutingCase extends RoutingScenario {
+  id: number;
+  name: string;
+  preference: EnginePreference;
+  available: boolean;
+  expected: {
+    engine: "libreoffice" | "internal";
+    reason: string;
+    fallbackReason: string | null;
+    spawn: boolean;
+  };
+}
+
+const ROUTING_SCENARIOS: RoutingScenario[] = [
+  { format: "pdf", mode: "ok", pages: 1 },
+  { format: "pdf", mode: "ok", pages: 3 },
+  { format: "pdf", mode: "exit1", pages: 1 },
+  { format: "pdf", mode: "sleep", pages: 1 },
+  { format: "pdf", mode: "empty", pages: 1 },
+  { format: "docx", mode: "ok", pages: 1 },
+  { format: "docx", mode: "text-loss", pages: 1 },
+  { format: "docx", mode: "exit1", pages: 1 },
+  { format: "docx", mode: "sleep", pages: 1 },
+  { format: "docx", mode: "empty", pages: 1 },
+  { format: "odt", mode: "ok", pages: 1 },
+  { format: "odt", mode: "text-loss", pages: 1 },
+  { format: "odt", mode: "exit1", pages: 1 },
+  { format: "odt", mode: "sleep", pages: 1 },
+  { format: "odt", mode: "empty", pages: 1 },
+  { format: "rtf", mode: "ok", pages: 1 },
+  { format: "rtf", mode: "text-loss", pages: 1 },
+  { format: "rtf", mode: "exit1", pages: 1 },
+  { format: "rtf", mode: "sleep", pages: 1 },
+  { format: "rtf", mode: "empty", pages: 1 },
+  { format: "html", mode: "ok", pages: 1 },
+  { format: "html", mode: "text-loss", pages: 1 },
+  { format: "html", mode: "exit1", pages: 1 },
+  { format: "txt", mode: "ok", pages: 1 },
+  { format: "md", mode: "ok", pages: 1 },
+];
+
+function routingExpectation(
+  preference: EnginePreference,
+  available: boolean,
+  scenario: RoutingScenario,
+): RoutingCase["expected"] {
+  if (preference === "internal") {
+    return {
+      engine: "internal",
+      reason: "preference-internal",
+      fallbackReason: null,
+      spawn: false,
+    };
+  }
+  if (scenario.format === "txt") {
+    return {
+      engine: "internal",
+      reason: "internal-format",
+      fallbackReason: null,
+      spawn: false,
+    };
+  }
+  if (scenario.format === "md") {
+    return {
+      engine: "internal",
+      reason: "format-unsupported",
+      fallbackReason: null,
+      spawn: false,
+    };
+  }
+  if (!available) {
+    return {
+      engine: "internal",
+      reason: "engine-unavailable",
+      fallbackReason: "engine-unavailable",
+      spawn: false,
+    };
+  }
+  if (scenario.mode === "text-loss") {
+    return {
+      engine: "internal",
+      reason: "text-loss",
+      fallbackReason: "text-loss",
+      spawn: true,
+    };
+  }
+  if (scenario.mode === "exit1" || scenario.mode === "empty") {
+    return {
+      engine: "internal",
+      reason: "conversion-failed",
+      fallbackReason: "conversion-failed",
+      spawn: true,
+    };
+  }
+  if (scenario.mode === "sleep") {
+    return {
+      engine: "internal",
+      reason: "timeout",
+      fallbackReason: "timeout",
+      spawn: true,
+    };
+  }
+  return {
+    engine: "libreoffice",
+    reason: "libreoffice",
+    fallbackReason: null,
+    spawn: true,
+  };
+}
+
+function buildRoutingCases(): RoutingCase[] {
+  const preferences: EnginePreference[] = ["auto", "libreoffice", "internal"];
+  const cases: RoutingCase[] = [];
+  for (const preference of preferences) {
+    for (const available of [true, false]) {
+      for (const scenario of ROUTING_SCENARIOS) {
+        const expected = routingExpectation(preference, available, scenario);
+        cases.push({
+          ...scenario,
+          id: cases.length + 1,
+          preference,
+          available,
+          expected,
+          name: `case ${String(cases.length + 1).padStart(3, "0")}: ${preference} + ${available ? "available" : "absent"} + ${scenario.format} + ${scenario.mode}${scenario.pages > 1 ? ` + ${scenario.pages} pages` : ""}`,
+        });
+      }
+    }
+  }
+  return cases;
+}
+
+const routingCases = buildRoutingCases();
+
+/** Fake-script mode that produces the scenario's outcome for the target. */
+function fakeModeFor(scenario: RoutingScenario): string {
+  if (scenario.mode === "empty") return "missing";
+  if (scenario.mode !== "ok") return scenario.mode;
+  // A real, pre-generated artifact for text-bearing targets; a valid PDF for
+  // PDF. This keeps text-equality deterministic without a real install.
+  return scenario.format === "pdf" ||
+    scenario.format === "txt" ||
+    scenario.format === "md"
+    ? "ok"
+    : "artifact";
+}
+
+function normalizeRoutingText(value: string): string {
+  return value
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function waitForEmptyDirectory(
+  directory: string,
+  timeoutMs = 4_000,
+): Promise<string[]> {
+  const deadline = Date.now() + timeoutMs;
+  let entries: string[] = [];
+  while (Date.now() < deadline) {
+    entries = await readdir(directory).catch(() => []);
+    if (entries.length === 0) return entries;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return entries;
+}
+
+const ROUTING_ENV_KEYS = [
+  "DSH_SOFFICE_PATH",
+  "DSH_FAKE_LOG",
+  "DSH_FAKE_MODE",
+  "DSH_FAKE_ARTIFACT_DIR",
+  "DSH_FAKE_SPAWN_MARKER",
+  "DSH_FAKE_PAGES",
+  "DSH_FAKE_VERSION_MODE",
+  "DSH_FAKE_MARKER",
+  "DSH_FAKE_EXIT",
+  "DSH_FAKE_FAIL_ONCE",
+  "PATH",
+  "ProgramFiles",
+  "ProgramFiles(x86)",
+  "LOCALAPPDATA",
+] as const;
+
+function snapshotRoutingEnv(): Record<string, string | undefined> {
+  const snapshot: Record<string, string | undefined> = {};
+  for (const key of ROUTING_ENV_KEYS) snapshot[key] = process.env[key];
+  return snapshot;
+}
+
+function restoreRoutingEnv(snapshot: Record<string, string | undefined>): void {
+  for (const key of ROUTING_ENV_KEYS) {
+    if (snapshot[key] === undefined) delete process.env[key];
+    else process.env[key] = snapshot[key];
+  }
+}
+
+describe("default engine routing (150 cases)", () => {
+  let routingRoot = "";
+  let artifactsDirectory = "";
+  let missingSoffice = "";
+
+  beforeAll(async () => {
+    routingRoot = await mkdtemp(path.join(baseDir, "routing-"));
+    artifactsDirectory = path.join(routingRoot, "artifacts");
+    await mkdir(artifactsDirectory, { recursive: true });
+    missingSoffice = path.join(routingRoot, "missing soffice é.mjs");
+    const model = createDocument({ paragraphs: ROUTING_TEXT });
+    const empty = createDocument({ paragraphs: [""] });
+    for (const format of ["docx", "odt", "rtf", "html"]) {
+      const produced = await exportAny(model, format);
+      await writeFile(
+        path.join(artifactsDirectory, `${format}.bin`),
+        produced.buffer,
+      );
+      const emptyProduced = await exportAny(empty, format);
+      await writeFile(
+        path.join(artifactsDirectory, `empty-${format}.bin`),
+        emptyProduced.buffer,
+      );
+    }
+    clearLibreOfficeCache();
+  }, 120_000);
+
+  afterAll(async () => {
+    clearLibreOfficeCache();
+    if (routingRoot) {
+      await rm(routingRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("builds exactly 150 distinct routing cases", () => {
+    expect(routingCases).toHaveLength(150);
+    expect(new Set(routingCases.map((entry) => entry.name)).size).toBe(150);
+    const preferences = new Set(routingCases.map((entry) => entry.preference));
+    expect([...preferences].sort()).toEqual([
+      "auto",
+      "internal",
+      "libreoffice",
+    ]);
+    const formats = new Set(routingCases.map((entry) => entry.format));
+    for (const format of ["docx", "odt", "rtf", "html", "txt", "pdf", "md"]) {
+      expect(formats.has(format)).toBe(true);
+    }
+    console.log(`routing cases: ${routingCases.length}`);
+  });
+
+  for (const testCase of routingCases) {
+    it(
+      testCase.name,
+      async () => {
+        const caseDirectory = await mkdtemp(
+          path.join(routingRoot, `case-${testCase.id}-`),
+        );
+        const engineTemp = path.join(caseDirectory, "engine-tmp");
+        await mkdir(engineTemp, { recursive: true });
+        const log = path.join(caseDirectory, "soffice.log");
+        const marker = path.join(caseDirectory, "spawned.marker");
+        const envSnapshot = snapshotRoutingEnv();
+        process.env.DSH_SOFFICE_PATH = testCase.available
+          ? fakePath
+          : missingSoffice;
+        process.env.DSH_FAKE_VERSION_MODE = "ok";
+        process.env.DSH_FAKE_LOG = log;
+        process.env.DSH_FAKE_MODE = fakeModeFor(testCase);
+        process.env.DSH_FAKE_ARTIFACT_DIR = artifactsDirectory;
+        process.env.DSH_FAKE_SPAWN_MARKER = marker;
+        process.env.DSH_FAKE_PAGES = String(testCase.pages);
+        // Keep detection deterministic: never discover the host installation.
+        process.env.PATH = path.join(routingRoot, "empty-path");
+        process.env.ProgramFiles = path.join(
+          routingRoot,
+          "missing-program-files",
+        );
+        process.env["ProgramFiles(x86)"] = path.join(
+          routingRoot,
+          "missing-program-files-x86",
+        );
+        process.env.LOCALAPPDATA = path.join(
+          routingRoot,
+          "missing-local-app-data",
+        );
+        const service = new DocumentService({
+          workspaceRoot: path.join(caseDirectory, "workspace"),
+          allowedReadRoots: [caseDirectory],
+          auditPath: path.join(caseDirectory, "audit.log"),
+          engine: testCase.preference,
+          engineTempDirectory: engineTemp,
+          engineTimeoutMs: 400,
+        });
+        try {
+          await service.init();
+          const created = await service.createDocument({
+            title: `routing-${testCase.id}`,
+            paragraphs: ROUTING_TEXT,
+          });
+          const beforeText = normalizeRoutingText(
+            service.getText(created.documentId).text,
+          );
+          const result =
+            testCase.format === "pdf"
+              ? await service.exportPdf(created.documentId)
+              : ((await service.exportDocument(
+                  created.documentId,
+                  testCase.format,
+                )) as {
+                  engine: string;
+                  reason: string;
+                  fallbackReason: string | null;
+                  bytes: number;
+                  pageCount: number | null;
+                  dataBase64?: string;
+                });
+
+          expect(result.engine, "engine").toBe(testCase.expected.engine);
+          expect(result.reason, "reason").toBe(testCase.expected.reason);
+          expect(result.fallbackReason, "fallbackReason").toBe(
+            testCase.expected.fallbackReason,
+          );
+          expect(service.enginePreference()).toBe(testCase.preference);
+
+          const bytes = Buffer.from(result.dataBase64 ?? "", "base64");
+          expect(bytes.byteLength).toBeGreaterThan(0);
+          if (testCase.format === "pdf") {
+            expect(bytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+            expect(
+              (result as { pageCount: number }).pageCount,
+              "pageCount",
+            ).toBeGreaterThan(0);
+            if (testCase.expected.engine === "libreoffice") {
+              expect((result as { pageCount: number }).pageCount).toBe(
+                testCase.pages,
+              );
+            }
+          } else if (testCase.expected.engine === "libreoffice") {
+            // A LibreOffice result is only returned when the text survived.
+            const imported = await importAny(
+              bytes,
+              `routing.${testCase.format}`,
+            );
+            expect(
+              normalizeRoutingText(documentText(imported.document)),
+              "text equality",
+            ).toBe(beforeText);
+          }
+
+          // Proof the binary was (or was not) launched at all.
+          expect(existsSync(marker), "spawn marker").toBe(
+            testCase.expected.spawn,
+          );
+          if (!testCase.expected.spawn) {
+            // No LibreOffice process means no LibreOffice log either.
+            expect(existsSync(log)).toBe(false);
+          }
+
+          // Every per-call temporary directory is gone.
+          const leftovers = await waitForEmptyDirectory(engineTemp);
+          expect(leftovers, "engine temp leftovers").toEqual([]);
+        } finally {
+          restoreRoutingEnv(envSnapshot);
+          await rm(caseDirectory, { recursive: true, force: true }).catch(
+            () => undefined,
+          );
+        }
+      },
+      30_000,
+    );
+  }
+
+  it("pure routing table agrees with the service outcomes", () => {
+    for (const preference of [
+      "auto",
+      "libreoffice",
+      "internal",
+    ] as EnginePreference[]) {
+      for (const available of [true, false]) {
+        for (const scenario of ROUTING_SCENARIOS) {
+          const expected = routingExpectation(preference, available, scenario);
+          const route = routeConversion({
+            preference,
+            available,
+            format: scenario.format,
+            textLoss: scenario.mode === "text-loss",
+          });
+          if (
+            scenario.mode === "exit1" ||
+            scenario.mode === "sleep" ||
+            scenario.mode === "empty"
+          ) {
+            // These outcomes are only known after the attempt: the engine must
+            // be LibreOffice when the route allows it, otherwise internal.
+            const attempt =
+              available &&
+              preference !== "internal" &&
+              scenario.format !== "txt" &&
+              scenario.format !== "md";
+            expect(
+              route.engine,
+              `${preference}/${available}/${scenario.format}/${scenario.mode}`,
+            ).toBe(attempt ? "libreoffice" : "internal");
+            const failure =
+              scenario.mode === "sleep" ? "timeout" : "conversion-failed";
+            const fallback = routeAfterFailure(
+              { preference, available, format: scenario.format },
+              failure,
+            );
+            expect(fallback.engine).toBe("internal");
+            expect(fallback.fallbackReason).toBe(failure);
+            continue;
+          }
+          expect(
+            route.engine,
+            `${preference}/${available}/${scenario.format}/${scenario.mode}`,
+          ).toBe(expected.engine);
+          expect(route.reason).toBe(expected.reason);
+          expect(route.fallbackReason).toBe(expected.fallbackReason);
+        }
+      }
+    }
+    const failed = routeAfterFailure(
+      { preference: "auto", available: true, format: "pdf" },
+      "timeout",
+    );
+    expect(failed.engine).toBe("internal");
+    expect(failed.reason).toBe("timeout");
+    expect(failed.fallbackReason).toBe("timeout");
+  });
+});
+
+/* ============================ service preference, save and panel contract */
+
+describe("service engine preference and save verification", () => {
+  let root = "";
+  let artifactsDirectory = "";
+
+  beforeAll(async () => {
+    root = await mkdtemp(path.join(baseDir, "service-engine-"));
+    artifactsDirectory = path.join(root, "artifacts");
+    await mkdir(artifactsDirectory, { recursive: true });
+    const model = createDocument({ paragraphs: ROUTING_TEXT });
+    for (const format of ["docx", "odt", "rtf", "html"]) {
+      const produced = await exportAny(model, format);
+      await writeFile(
+        path.join(artifactsDirectory, `${format}.bin`),
+        produced.buffer,
+      );
+    }
+    clearLibreOfficeCache();
+  }, 120_000);
+
+  afterAll(async () => {
+    clearLibreOfficeCache();
+    if (root) await rm(root, { recursive: true, force: true });
+  });
+
+  async function withFakeService<T>(
+    options: {
+      engine?: EnginePreference;
+      verifySaveWithLibreOffice?: boolean;
+      fakeMode?: string;
+      failOnce?: boolean;
+    },
+    work: (
+      service: DocumentService,
+      paths: {
+        directory: string;
+        marker: string;
+        log: string;
+        engineTemp: string;
+      },
+    ) => Promise<T>,
+  ): Promise<T> {
+    const directory = await mkdtemp(path.join(root, "case-"));
+    const engineTemp = path.join(directory, "engine-tmp");
+    await mkdir(engineTemp, { recursive: true });
+    const marker = path.join(directory, "spawned.marker");
+    const log = path.join(directory, "soffice.log");
+    const envSnapshot = snapshotRoutingEnv();
+    process.env.DSH_SOFFICE_PATH = fakePath;
+    process.env.DSH_FAKE_VERSION_MODE = "ok";
+    process.env.DSH_FAKE_LOG = log;
+    process.env.DSH_FAKE_MODE = options.fakeMode ?? "ok";
+    process.env.DSH_FAKE_ARTIFACT_DIR = artifactsDirectory;
+    process.env.DSH_FAKE_SPAWN_MARKER = marker;
+    process.env.DSH_FAKE_PAGES = "2";
+    if (options.failOnce) {
+      process.env.DSH_FAKE_FAIL_ONCE = path.join(
+        directory,
+        "fail-once.counter",
+      );
+    }
+    process.env.PATH = path.join(root, "empty-path");
+    process.env.ProgramFiles = path.join(root, "missing-program-files");
+    process.env["ProgramFiles(x86)"] = path.join(
+      root,
+      "missing-program-files-x86",
+    );
+    process.env.LOCALAPPDATA = path.join(root, "missing-local-app-data");
+    clearLibreOfficeCache();
+    const service = new DocumentService({
+      workspaceRoot: path.join(directory, "workspace"),
+      allowedReadRoots: [directory],
+      auditPath: path.join(directory, "audit.log"),
+      ...(options.engine === undefined ? {} : { engine: options.engine }),
+      ...(options.verifySaveWithLibreOffice === undefined
+        ? {}
+        : { verifySaveWithLibreOffice: options.verifySaveWithLibreOffice }),
+      engineTempDirectory: engineTemp,
+      engineTimeoutMs: 5_000,
+    });
+    try {
+      await service.init();
+      return await work(service, { directory, marker, log, engineTemp });
+    } finally {
+      restoreRoutingEnv(envSnapshot);
+      clearLibreOfficeCache();
+      await rm(directory, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+    }
+  }
+
+  it("changes the preference per service and rejects unknown values", async () => {
+    await withFakeService({}, async (service) => {
+      expect(service.enginePreference()).toBe("auto");
+      const internal = await service.setEnginePreference("internal");
+      expect(internal.previous).toBe("auto");
+      expect(internal.preference).toBe("internal");
+      expect(internal.engine).toBe("internal");
+      expect(internal.reason).toBe("preference-internal");
+      expect(service.enginePreference()).toBe("internal");
+
+      const auto = await service.setEnginePreference("auto");
+      expect(auto.preference).toBe("auto");
+      expect(service.enginePreference()).toBe("auto");
+
+      const libre = await service.setEnginePreference("libreoffice");
+      expect(libre.engine).toBe("libreoffice");
+      expect(libre.available).toBe(true);
+      expect(libre.fallbackReason).toBeNull();
+
+      await expect(
+        service.setEnginePreference("microsoft-word"),
+      ).rejects.toBeInstanceOf(ServiceError);
+      await expect(
+        service.setEnginePreference("microsoft-word"),
+      ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+      expect(service.enginePreference()).toBe("libreoffice");
+    });
+  });
+
+  it("exposes the preference, resolved engine and routing matrix", async () => {
+    await withFakeService({ engine: "libreoffice" }, async (service) => {
+      const status = await service.engineStatus();
+      expect(status.preference).toBe("libreoffice");
+      expect(status.verifySaveWithLibreOffice).toBe(false);
+      expect(status.engineInUse.engine).toBe("libreoffice");
+      expect(status.engineInUse.reason).toBe("libreoffice");
+      expect(status.engineInUse.fallbackReason).toBeNull();
+      const pdf = status.capabilities.find((entry) => entry.format === "pdf");
+      expect(pdf?.routing).toEqual({
+        engine: "libreoffice",
+        reason: "libreoffice",
+        fallbackReason: null,
+      });
+      const txt = status.capabilities.find((entry) => entry.format === "txt");
+      expect(txt?.routing.engine).toBe("internal");
+      expect(txt?.routing.reason).toBe("internal-format");
+      const html = status.capabilities.find((entry) => entry.format === "html");
+      expect(html?.routing.engine).toBe("libreoffice");
+    });
+  });
+
+  it("stamps the saved DOCX metadata and skips verification by default", async () => {
+    await withFakeService({}, async (service, paths) => {
+      const created = await service.createDocument({
+        paragraphs: ROUTING_TEXT,
+      });
+      const saved = await service.saveDocument(created.documentId);
+      expect(saved.engine).toBe("internal");
+      expect(saved.enginePreference).toBe("auto");
+      expect(saved.verification).toBeNull();
+      const record = JSON.parse(
+        await readFile(
+          path.join(
+            paths.directory,
+            "workspace",
+            "documents",
+            created.documentId,
+            "record.json",
+          ),
+          "utf8",
+        ),
+      ) as Record<string, unknown>;
+      expect(record.engine).toBe("internal");
+      expect(record.enginePreference).toBe("auto");
+      // No verification means no LibreOffice process at all for a save.
+      expect(existsSync(paths.marker)).toBe(false);
+    });
+  });
+
+  it("verifies a save through LibreOffice when enabled", async () => {
+    await withFakeService(
+      { verifySaveWithLibreOffice: true },
+      async (service, paths) => {
+        const created = await service.createDocument({
+          paragraphs: ROUTING_TEXT,
+        });
+        const saved = await service.saveDocument(created.documentId);
+        expect(saved.engine).toBe("internal");
+        expect(saved.verification).toEqual({
+          engine: "libreoffice",
+          pageCount: 2,
+          reason: "libreoffice",
+          fallbackReason: null,
+        });
+        expect(existsSync(paths.marker)).toBe(true);
+        expect(existsSync(paths.log)).toBe(true);
+        const leftovers = await waitForEmptyDirectory(paths.engineTemp);
+        expect(leftovers).toEqual([]);
+      },
+    );
+  });
+
+  it("reports a save verification failure instead of failing the save", async () => {
+    await withFakeService(
+      { verifySaveWithLibreOffice: true, fakeMode: "exit1" },
+      async (service) => {
+        const created = await service.createDocument({
+          paragraphs: ROUTING_TEXT,
+        });
+        const saved = await service.saveDocument(created.documentId);
+        expect(saved.verification).toEqual({
+          engine: "internal",
+          pageCount: expect.any(Number),
+          reason: "conversion-failed",
+          fallbackReason: "conversion-failed",
+        });
+        expect(saved.verification?.pageCount).toBeGreaterThan(0);
+      },
+    );
+  });
+
+  it("never starts LibreOffice for an internal save verification", async () => {
+    await withFakeService(
+      { engine: "internal", verifySaveWithLibreOffice: true },
+      async (service, paths) => {
+        const created = await service.createDocument({
+          paragraphs: ROUTING_TEXT,
+        });
+        const saved = await service.saveDocument(created.documentId);
+        expect(saved.verification?.engine).toBe("internal");
+        expect(saved.verification?.reason).toBe("preference-internal");
+        expect(saved.verification?.fallbackReason).toBeNull();
+        expect(existsSync(paths.marker)).toBe(false);
+        expect(existsSync(paths.log)).toBe(false);
+      },
+    );
+  });
+
+  it("a LibreOffice PDF failure still returns a working internal PDF", async () => {
+    await withFakeService({ fakeMode: "exit1" }, async (service) => {
+      const created = await service.createDocument({
+        paragraphs: ROUTING_TEXT,
+      });
+      const exported = await service.exportPdf(created.documentId);
+      expect(exported.engine).toBe("internal");
+      expect(exported.fallbackReason).toBe("conversion-failed");
+      expect(exported.pageCount).toBeGreaterThan(0);
+      expect(exported.dataBase64).toBeTruthy();
+      const bytes = Buffer.from(exported.dataBase64 ?? "", "base64");
+      expect(bytes.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+      // This is exactly what the panel's /export route streams.
+      expect(bytes.byteLength).toBe(exported.bytes);
+    });
+  });
+
+  it("retries a transient shared-profile failure once with an isolated profile", async () => {
+    await withFakeService(
+      { fakeMode: "artifact", failOnce: true },
+      async (service, paths) => {
+        const created = await service.createDocument({
+          paragraphs: ROUTING_TEXT,
+        });
+        const exported = (await service.exportDocument(
+          created.documentId,
+          "html",
+        )) as {
+          engine: string;
+          warnings: string[];
+          bytes: number;
+        };
+        expect(exported.engine).toBe("libreoffice");
+        expect(exported.bytes).toBeGreaterThan(0);
+        expect(
+          exported.warnings.some((entry) => entry.includes("retried")),
+        ).toBe(true);
+        const conversions = (await readLog(paths.log)).filter(
+          (line) => line.kind === "convert",
+        );
+        expect(conversions).toHaveLength(2);
+        // First attempt: reusable shared profile. Retry: isolated profile,
+        // removed afterwards.
+        expect(conversions[0].profile).toContain("dsh-libreoffice-profile-");
+        expect(conversions[1].profile).toContain("dsh-libreoffice-concurrent-");
+        expect(existsSync(conversions[0].profile)).toBe(true);
+        expect(existsSync(conversions[1].profile)).toBe(false);
+      },
+    );
+  });
+
+  it("document_set_engine is exposed through the tool registry", async () => {
+    await withFakeService({}, async (service) => {
+      const result = await invokeTool(service, "document_set_engine", {
+        engine: "internal",
+      });
+      expect(result.ok).toBe(true);
+      expect((result.data as { preference: string }).preference).toBe(
+        "internal",
+      );
+      expect(service.enginePreference()).toBe("internal");
+      const rejected = await invokeTool(service, "document_set_engine", {
+        engine: "word",
+      });
+      expect(rejected.ok).toBe(false);
+      expect(service.enginePreference()).toBe("internal");
+    });
   });
 });
 
@@ -2893,6 +3789,96 @@ describe("LibreOffice real binary (guarded)", () => {
   );
 
   realTest(
+    "default PDF path reports LibreOffice and matches the CLI page count",
+    async () => {
+      const fixture = path.resolve(
+        process.cwd(),
+        "fixtures/docx_docs_renderer_feature_test_cases.docx",
+      );
+      const workspace = await mkdtemp(path.join(baseDir, "real-default-"));
+      const service = new DocumentService({
+        workspaceRoot: workspace,
+        allowedReadRoots: [workspace, path.dirname(fixture)],
+        auditPath: path.join(workspace, "audit.log"),
+      });
+      const internalWorkspace = await mkdtemp(
+        path.join(baseDir, "real-internal-"),
+      );
+      const internalService = new DocumentService({
+        workspaceRoot: internalWorkspace,
+        allowedReadRoots: [internalWorkspace, path.dirname(fixture)],
+        auditPath: path.join(internalWorkspace, "audit.log"),
+        engine: "internal",
+      });
+      await service.init();
+      await internalService.init();
+      try {
+        const opened = await service.openDocument(fixture);
+        const saved = await service.saveDocument(opened.documentId);
+        // The LibreOffice CLI count for the exact DOCX the service stored.
+        const cli = await convertWithLibreOffice({
+          inputPath: saved.path,
+          format: "pdf",
+          timeoutMs: 180_000,
+          env: realEnvironment(),
+          detection: realDetection,
+        });
+        const cliPages = countPdfPages(
+          Buffer.from(cli.dataBase64 ?? "", "base64"),
+        );
+
+        const exported = await service.exportPdf(opened.documentId);
+        const pdf = Buffer.from(exported.dataBase64 ?? "", "base64");
+        expect(exported.engine).toBe("libreoffice");
+        expect(exported.reason).toBe("libreoffice");
+        expect(exported.fallbackReason).toBeNull();
+        expect(pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+        expect(exported.pageCount).toBeGreaterThan(0);
+        expect(exported.pageCount).toBe(cliPages);
+
+        // The explicit internal preference never consults LibreOffice and still
+        // produces a valid PDF with an honest page count.
+        const internalOpened = await internalService.openDocument(fixture);
+        const internal = await internalService.exportPdf(
+          internalOpened.documentId,
+        );
+        const internalPdf = Buffer.from(internal.dataBase64 ?? "", "base64");
+        expect(internal.engine).toBe("internal");
+        expect(internal.reason).toBe("preference-internal");
+        expect(internal.fallbackReason).toBeNull();
+        expect(internalPdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+        expect(internal.pageCount).toBeGreaterThan(0);
+        expect(internal.pageCount).toBe(countPdfPages(internalPdf));
+
+        console.log(
+          JSON.stringify(
+            {
+              defaultPdfPath: {
+                engine: exported.engine,
+                fallbackReason: exported.fallbackReason,
+                pages: exported.pageCount,
+                cliPages,
+                bytes: pdf.byteLength,
+                internalPreference: {
+                  engine: internal.engine,
+                  pages: internal.pageCount,
+                  bytes: internalPdf.byteLength,
+                },
+              },
+            },
+            null,
+            2,
+          ),
+        );
+      } finally {
+        await rm(workspace, { recursive: true, force: true });
+        await rm(internalWorkspace, { recursive: true, force: true });
+      }
+    },
+    600_000,
+  );
+
+  realTest(
     "reports internal vs LibreOffice PDF page counts and sizes honestly",
     async () => {
       const fixture = path.resolve(
@@ -2905,30 +3891,42 @@ describe("LibreOffice real binary (guarded)", () => {
         allowedReadRoots: [workspace, path.dirname(fixture)],
         auditPath: path.join(workspace, "audit.log"),
       });
+      const internalService = new DocumentService({
+        workspaceRoot: workspace,
+        allowedReadRoots: [workspace, path.dirname(fixture)],
+        auditPath: path.join(workspace, "audit.log"),
+        engine: "internal",
+      });
       await service.init();
+      await internalService.init();
       try {
         const opened = await service.openDocument(fixture);
-        const internal = await service.exportPdf(opened.documentId);
+        const internalOpened = await internalService.openDocument(fixture);
+        const internal = await internalService.exportPdf(
+          internalOpened.documentId,
+        );
         const internalPdf = Buffer.from(internal.dataBase64 ?? "", "base64");
-        const libreOffice = await renderPdfWithLibreOffice(fixture, {
-          env: realEnvironment(),
-          detection: realDetection,
-          timeoutMs: 180_000,
-        });
+        const libreOffice = await service.exportPdf(opened.documentId);
+        const libreOfficePdf = Buffer.from(
+          libreOffice.dataBase64 ?? "",
+          "base64",
+        );
         const comparison = await comparePdfEngines({
           docxPath: fixture,
           internalPdf,
-          libreOfficeResult: libreOffice,
+          libreOfficePdf,
         });
         const summary = {
           differentialPdf: {
             internal: {
               bytes: internalPdf.byteLength,
               pages: comparison.internal.pageCount ?? null,
+              engine: internal.engine,
             },
             libreoffice: {
-              bytes: libreOffice.bytes,
+              bytes: libreOfficePdf.byteLength,
               pages: comparison.libreoffice.pageCount ?? null,
+              engine: libreOffice.engine,
             },
             bothPresent: comparison.bothPresent,
             byteIdentical: comparison.byteIdentical,
@@ -2937,12 +3935,14 @@ describe("LibreOffice real binary (guarded)", () => {
           },
         };
         console.log(JSON.stringify(summary, null, 2));
+        expect(internal.engine).toBe("internal");
+        expect(libreOffice.engine).toBe("libreoffice");
         expect(comparison.bothPresent).toBe(true);
         expect(internalPdf.byteLength).toBeGreaterThan(1_000);
-        expect(libreOffice.bytes).toBeGreaterThan(1_000);
+        expect(libreOfficePdf.byteLength).toBeGreaterThan(1_000);
         expect(internal.pageCount).toBeGreaterThan(0);
-        expect(comparison.internal.pageCount).toBeGreaterThan(0);
-        expect(comparison.libreoffice.pageCount).toBeGreaterThan(0);
+        expect(comparison.internal.pageCount).toBe(internal.pageCount);
+        expect(comparison.libreoffice.pageCount).toBe(libreOffice.pageCount);
         expect(comparison.pixelComparison).toBe("not-performed");
       } finally {
         await rm(workspace, { recursive: true, force: true });

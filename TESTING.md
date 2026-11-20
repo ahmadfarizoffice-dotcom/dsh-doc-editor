@@ -1,4 +1,4 @@
-# Testing
+﻿# Testing
 
 Everything below is executed locally and in CI. Commands are run from the
 repository root after `pnpm install`.
@@ -24,7 +24,7 @@ Linux with Node 22):
 
 | Command                                                             | Result                                                                                                 |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `vitest run` (whole workspace)                                      | **28 files / 615 tests passed** (core + engine + fuzz/differential/anomaly/MC-DC)                      |
+| `vitest run` (whole workspace)                                      | **28 files / 779 tests passed** (core + engine routing + fuzz/differential/anomaly/MC-DC)              |
 | `tsc -p packages/core/tsconfig.json --noEmit`                       | pass                                                                                                   |
 | `tsc -b packages/core apps/mcp apps/cli`                            | pass                                                                                                   |
 | `tsc -p apps/web/tsconfig.json --noEmit` (client)                   | pass                                                                                                   |
@@ -36,7 +36,7 @@ Linux with Node 22):
 | `node tools/validate-mcp-schemas.mjs`                               | OK — **52 tools**, 8 resources, 8 prompts                                                              |
 | `node tools/build-dsh-plugin.mjs`                                   | 4.03 MiB single-file engine, **52 tools**, PDF smoke pass                                              |
 | `node tools/check-dsh-plugin.mjs`                                   | OK — manifest, 14 files, **28 default Host tools**, locale/icon/detail checks                          |
-| `node --test dsh-plugin/test/*.mjs`                                 | **120 tests passed** (host API, browse/workspace, late Web server, ribbon, logic, panel, interaction)  |
+| `node --test dsh-plugin/test/*.mjs`                                 | **133 tests passed** (host API, browse/workspace, late Web server, ribbon, logic, panel, interaction)  |
 | `node tools/e2e-panel.mjs --suite shortcuts --count 150`            | **150/150** shortcuts, 59 s (CDP-driven, real Chrome)                                                  |
 | `node tools/e2e-panel.mjs --suite selection-multiblock --count 150` | **150/150** cross-block selection and formatting                                                       |
 | `node tools/e2e-panel.mjs --suite typing-integrity --count 150`     | **147/150** (3 × backspace timing races remain open, seed 1337)                                        |

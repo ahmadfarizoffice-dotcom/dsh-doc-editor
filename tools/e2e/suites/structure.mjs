@@ -8,7 +8,6 @@ import {
   assert,
   assertEqual,
   caretAt,
-  caseSeed,
   clickTool,
   domText,
   hostDocument,
@@ -22,6 +21,7 @@ import {
   settleText,
   waitForHostText,
   evaluatePage,
+  seededCases,
 } from "../kit.mjs";
 
 const BASE = ["Alpha paragraph.", "Beta paragraph.", "Gamma paragraph."];
@@ -163,9 +163,7 @@ function buildCases() {
     }
   }
   // 15 scenarios × 11 = 165; keep 150, rotated by --seed.
-  const offset = caseSeed() % cases.length;
-  const rotated = cases.slice(offset).concat(cases.slice(0, offset));
-  return rotated.slice(0, 150);
+  return seededCases(cases).slice(0, 150);
 }
 
 async function runCase(item) {

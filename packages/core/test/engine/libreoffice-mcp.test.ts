@@ -140,10 +140,12 @@ describe("MCP LibreOffice wiring", () => {
     const names = listed.tools.map((tool) => tool.name);
     expect(names).toContain("document_engine_status");
     expect(names).toContain("document_convert_external");
+    expect(names).toContain("document_set_engine");
 
     for (const name of [
       "document_engine_status",
       "document_convert_external",
+      "document_set_engine",
     ]) {
       const tool = listed.tools.find((entry) => entry.name === name);
       expect(tool).toBeDefined();
@@ -159,6 +161,42 @@ describe("MCP LibreOffice wiring", () => {
     expect(
       Object.keys(conversion?.inputSchema.properties ?? {}).sort(),
     ).toEqual(["format", "inputPath", "outputPath", "timeoutMs"]);
+
+    const engineTool = listed.tools.find(
+      (entry) => entry.name === "document_set_engine",
+    );
+    expect(
+      Object.keys(engineTool?.inputSchema.properties ?? {}).sort(),
+    ).toEqual(["engine"]);
+    expect(engineTool?.inputSchema.required).toEqual(["engine"]);
+    expect(engineTool?.inputSchema.properties?.engine?.enum).toEqual([
+      "auto",
+      "libreoffice",
+      "internal",
+    ]);
+  });
+
+  it("reports the engine preference, resolved engine and route matrix", async () => {
+    const result = payload(
+      await client.callTool({
+        name: "document_engine_status",
+        arguments: {},
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.data?.preference).toBe("auto");
+    expect(result.data?.engineInUse?.engine).toBe("internal");
+    expect(result.data?.engineInUse?.reason).toBe("engine-unavailable");
+    expect(result.data?.engineInUse?.fallbackReason).toBe("engine-unavailable");
+    const pdf = (result.data?.capabilities as any[]).find(
+      (entry) => entry.format === "pdf",
+    );
+    expect(pdf.routing).toEqual({
+      engine: "internal",
+      reason: "engine-unavailable",
+      fallbackReason: "engine-unavailable",
+    });
+    expect(result.data?.verifySaveWithLibreOffice).toBe(false);
   });
 
   it("reports the engine as unavailable with detection evidence", async () => {
@@ -204,9 +242,9 @@ describe("MCP LibreOffice wiring", () => {
     const names = tools.map((tool) => tool.name);
     expect(names).toContain("document_engine_status");
     expect(names).toContain("document_convert_external");
-    expect(tools.length).toBe(52);
+    expect(tools.length).toBe(53);
     const manifest = buildToolManifest();
-    expect(manifest.count).toBe(52);
+    expect(manifest.count).toBe(53);
     for (const entry of manifest.tools.filter(
       (tool) =>
         tool.name.startsWith("document_engine") ||

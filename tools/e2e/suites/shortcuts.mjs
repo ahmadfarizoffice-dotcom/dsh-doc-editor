@@ -34,6 +34,7 @@ import {
   waitForNet,
   waitForOp,
   waitForPage,
+  seededCases,
 } from "../kit.mjs";
 
 const PARAGRAPHS = ["Alpha paragraph.", "Beta paragraph.", "Gamma paragraph."];
@@ -177,7 +178,7 @@ function buildCases() {
       foreign: true,
     });
   }
-  return cases.slice(0, 150);
+  return seededCases(cases).slice(0, 150);
 }
 
 /* --------------------------------------------------------------- setup */

@@ -19,6 +19,7 @@ import {
   sleep,
   typeText,
   kit,
+  seededCases,
 } from "../kit.mjs";
 
 const BASE = ["Alpha paragraph.", "Beta paragraph.", "Gamma paragraph."];
@@ -107,7 +108,7 @@ function buildCases() {
   for (let index = 0; index < 150; index += 1) {
     cases.push({ id: `script/${index}`, script: scriptFor(index) });
   }
-  return cases;
+  return seededCases(cases).slice(0, 150);
 }
 
 async function runUi(script) {

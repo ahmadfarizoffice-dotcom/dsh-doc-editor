@@ -189,7 +189,7 @@ fixture** generated from real OOXML that adds those constructs — see
 | Layout engine (pagination, line breaking, tables, floats, headers/footers, footnotes, columns)                                   | ✅                                                   |
 | HTML, SVG and PDF renderers over the layout model                                                                                | ✅                                                   |
 | Conversion engine with capability matrix and loss reports                                                                        | ✅ (adapters vary — see matrix)                      |
-| MCP server: 52 tools, 8 resources, 8 prompts, typed schemas                                                                      | ✅                                                   |
+| MCP server: 53 tools, 8 resources, 8 prompts, typed schemas                                                                      | ✅                                                   |
 | Native agent tool definitions (JSON Schema)                                                                                      | ✅                                                   |
 | Reusable skills (12)                                                                                                             | ✅                                                   |
 | Editor UI (formatting, tables, images, comments, find/replace, outline, AI panel, print preview)                                 | ✅                                                   |

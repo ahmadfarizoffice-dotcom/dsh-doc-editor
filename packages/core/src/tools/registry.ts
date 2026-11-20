@@ -814,7 +814,7 @@ tool({
   category: "conversion",
   mutating: true,
   description:
-    "Converts an open document (or a file path) to another format through the conversion engine. Returns the bytes as base64 or writes them to a workspace path, plus a loss report.",
+    "Converts an open document (or a file path) to another format through the default engine (LibreOffice when available, otherwise the internal adapter). Returns the bytes as base64 or writes them to a workspace path, the engine used, any typed fallbackReason and a loss report.",
   inputSchema: {
     documentId: z.string().optional(),
     path: z.string().optional(),
@@ -833,7 +833,7 @@ tool({
   category: "conversion",
   mutating: true,
   description:
-    "Renders the document to PDF with the layout engine and returns the page count.",
+    "Renders the document to PDF with the default engine (LibreOffice when available, otherwise the internal renderer) and returns the page count plus the engine used and any typed fallbackReason.",
   inputSchema: { documentId: id(), outputPath: z.string().optional() },
   handler: async ({ service }, args) =>
     service.exportPdf(
@@ -860,7 +860,7 @@ tool({
   category: "conversion",
   mutating: true,
   description:
-    "Exports the document to a named format (docx, dotx, docm, pdf, html, md, txt, odt, rtf) as base64 or a workspace path.",
+    "Exports the document to a named format (docx, dotx, docm, pdf, html, md, txt, odt, rtf) as base64 or a workspace path, reporting the engine used, any typed fallbackReason and the fidelity report.",
   inputSchema: {
     documentId: id(),
     format: z.string().min(1),
@@ -879,9 +879,25 @@ tool({
   title: "External engine status",
   category: "conversion",
   description:
-    "Reports whether the optional LibreOffice engine is installed and usable, alongside the internal engine capability matrix. When LibreOffice is absent the result is available:false with the detection evidence and reason; it never claims a converter that does not exist.",
+    "Reports the configured engine preference (auto, libreoffice or internal), the engine actually in use for PDF conversion, the last routing decision, and the per-format internal vs LibreOffice capability matrix with route reasons. When LibreOffice is absent the result is available:false with the detection evidence and reason; it never claims a converter that does not exist.",
   inputSchema: {},
   handler: async ({ service }) => service.engineStatus(),
+});
+
+tool({
+  name: "document_set_engine",
+  title: "Set conversion engine",
+  category: "conversion",
+  mutating: true,
+  description:
+    "Sets the conversion/PDF engine preference for this service: auto (LibreOffice first with reported fallback), libreoffice (require LibreOffice, report typed fallback when it is missing or fails) or internal (never start LibreOffice). Returns the resolved engine and route reason.",
+  inputSchema: {
+    engine: z
+      .enum(["auto", "libreoffice", "internal"])
+      .describe("Engine preference; auto is LibreOffice-first with fallback"),
+  },
+  handler: async ({ service }, args) =>
+    service.setEnginePreference(args.engine),
 });
 
 tool({

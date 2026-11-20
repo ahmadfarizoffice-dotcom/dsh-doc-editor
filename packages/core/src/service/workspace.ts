@@ -36,6 +36,14 @@ export interface DocumentRecord {
   sourceFormat: string;
   pageCount?: number;
   wordCount?: number;
+  /**
+   * Engine that wrote the stored `document.docx`. The model exporter always
+   * writes it, so this is `internal`; it is recorded so a reader never has to
+   * guess whether the bytes came from LibreOffice.
+   */
+  engine?: "internal" | "libreoffice";
+  /** Service-level engine preference in effect at save time. */
+  enginePreference?: "auto" | "libreoffice" | "internal";
 }
 
 export interface WorkspaceOptions {

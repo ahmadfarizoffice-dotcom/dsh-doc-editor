@@ -458,7 +458,7 @@ Then optionally delete `DSH_DOC_WORKSPACE` and the build outputs
 ## Documentation map
 
 - [README.md](README.md) — what the engine is, quick start, repository layout
-- [MCP.md](MCP.md) — 52 tools, resources, prompts, security, error codes
+- [MCP.md](MCP.md) — 53 tools, resources, prompts, security, error codes
 - [AGENT_SKILLS.md](AGENT_SKILLS.md) — skill inventory, routing, native tool definitions
 - [SUPPORTED_FORMATS.md](SUPPORTED_FORMATS.md) — format matrix and fidelity notes
 - [SECURITY.md](SECURITY.md) — threat model and confinement rules

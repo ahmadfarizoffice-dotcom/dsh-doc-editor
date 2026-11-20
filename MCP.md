@@ -134,11 +134,12 @@ with `isError: true` on failures.
 
 | Tool                        | Purpose                                                                                                  |
 | --------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `document_convert`          | Convert open document (or path) to a target format                                                       |
-| `document_export_pdf`       | Layout engine → PDF (returns page count)                                                                 |
+| `document_convert`          | Convert open document (or path) to a target format (default engine, engine + fallback reason reported)   |
+| `document_export_pdf`       | LibreOffice → PDF when available, internal renderer otherwise (page count, engine, fallback reason)      |
 | `document_import`           | Import any supported format                                                                              |
-| `document_export`           | Export to docx/dotx/docm/pdf/html/md/txt/odt/rtf                                                         |
-| `document_engine_status`    | Optional external engine (LibreOffice) detection, version and capability matrix                          |
+| `document_export`           | Export to docx/dotx/docm/pdf/html/md/txt/odt/rtf (engine + fidelity report)                              |
+| `document_engine_status`    | Engine preference, engine in use, last route and the internal vs LibreOffice capability/routing matrix   |
+| `document_set_engine`       | Set the service engine preference: `auto` (LibreOffice-first), `libreoffice`, `internal`                 |
 | `document_convert_external` | Convert through LibreOffice when installed; typed `ENGINE_UNAVAILABLE` with detection evidence otherwise |
 
 ### AI

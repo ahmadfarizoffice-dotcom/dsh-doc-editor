@@ -52,7 +52,7 @@ Client configuration (any MCP host):
 }
 ```
 
-The server exposes 50 `document_*` tools, `dshdoc://` resources and 8 prompts.
+The server exposes 53 `document_*` tools, `dshdoc://` resources and 8 prompts.
 Tool results are `{ ok, data }` / `{ ok: false, error: { code, message } }`.
 See [MCP.md](MCP.md) for the inventory and error codes.
 

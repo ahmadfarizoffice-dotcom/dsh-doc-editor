@@ -10,7 +10,6 @@ import {
   assert,
   assertEqual,
   caretAt,
-  caseSeed,
   clickBlock,
   composeText,
   domText,
@@ -30,6 +29,7 @@ import {
   totalOps,
   typeText,
   waitForOp,
+  seededCases,
 } from "../kit.mjs";
 
 const BASE = ["Alpha paragraph.", "Beta paragraph.", "Gamma paragraph."];
@@ -94,15 +94,21 @@ function scenarioPlan(name, text, variant) {
         expected: textOf([base[0] + PAYLOAD, base[1], base[2]]),
         paste: true,
       };
-    case "backspace":
+    case "backspace": {
+      // One Backspace deletes exactly one character at the caret. When the
+      // case presses more times than the typed text is long, the extra presses
+      // continue into the paragraph itself — that is what the panel's deletion
+      // queue applies, so the expectation is the count, not the typed text.
+      const typed = base[0] + type;
       return {
         expected: textOf([
-          base[0] + type.slice(0, Math.max(0, type.length - variant.deletes)),
+          typed.slice(0, Math.max(0, typed.length - variant.deletes)),
           base[1],
           base[2],
         ]),
         backspaces: variant.deletes,
       };
+    }
     case "undo-then-type":
       return {
         expected: textOf([base[0] + type, base[1], base[2]]),
@@ -153,9 +159,7 @@ function buildCases() {
       }
     }
   }
-  const offset = caseSeed() % cases.length;
-  const rotated = cases.slice(offset).concat(cases.slice(0, offset));
-  return rotated.slice(0, 150);
+  return seededCases(cases).slice(0, 150);
 }
 
 async function runCase(item) {

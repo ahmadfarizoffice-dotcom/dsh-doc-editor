@@ -25,6 +25,7 @@ import {
   sleep,
   typeText,
   waitForPage,
+  seededCases,
 } from "../kit.mjs";
 import { click, mouse } from "../cdp.mjs";
 
@@ -291,7 +292,7 @@ function buildCases() {
       fraction: 0.8,
     });
   }
-  return kept.slice(0, 150);
+  return seededCases(kept).slice(0, 150);
 }
 
 async function applyShape(item, ids) {

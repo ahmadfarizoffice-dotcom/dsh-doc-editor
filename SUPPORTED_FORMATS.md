@@ -1,4 +1,4 @@
-# Supported formats
+﻿# Supported formats
 
 The engine has a modular adapter registry (`packages/core/src/formats`). Every
 adapter declares a capability profile; the conversion engine
@@ -35,23 +35,32 @@ rejects both with `FORMAT_EXPORT_UNSUPPORTED` instead of producing a DOCX.
 
 ## Optional LibreOffice engine
 
-The editing engine is model-first and self-contained; LibreOffice is an
-**optional external converter and reference oracle**, never required to edit.
-`document_engine_status` reports whether it is installed, with the detected
-binary, version and every candidate path it probed. When LibreOffice is present
-(verified here with **26.8.3.1**, `soffice.com`), `document_convert_external`
-runs `soffice --headless` with an isolated per-call profile and returns the
-converted file; when it is absent every path fails with `ENGINE_UNAVAILABLE`
-plus the detection evidence, and nothing pretends otherwise.
+**LibreOffice is the default conversion and PDF engine when it is installed.**
+Editing stays model-first (the IR, layout and DOCX exporter are ours); only
+conversion and PDF rendering route through LibreOffice. The service preference
+is `engine: "auto"` by default, which means _LibreOffice-first with automatic
+fallback_, so an installation without LibreOffice keeps working exactly as
+before. `DSH_DOC_ENGINE=internal` forces the built-in paths, and the
+`document_set_engine` tool changes the preference at runtime.
 
-Use it for formats the internal adapters do not cover well (for example
-high-fidelity PDF rendering of a DOCX, or legacy formats LibreOffice supports)
-and as a differential oracle: `tools/libreoffice-smoke.mjs` converts a DOCX both
-ways and reports page counts and byte sizes from each side, and
-`packages/core/test/engine/libreoffice.test.ts` runs 150-case suites for
-detection, arguments and error mapping against a fake binary, plus real-binary
-integration when installed. Writes stay confined to the workspace and are
-refused in read-only mode.
+Routing is measured per call, not assumed:
+
+| Target                            | Engine      | Why                                                        |
+| --------------------------------- | ----------- | ---------------------------------------------------------- |
+| PDF                               | LibreOffice | real Word pagination; internal renderer as fallback        |
+| DOCX                              | LibreOffice | round-trips the model DOCX with equal text                 |
+| ODT                               | LibreOffice | equal text, richer structure                               |
+| RTF / HTML                        | internal    | LibreOffice lost text on the fixture (`text-loss`)         |
+| TXT                               | internal    | LibreOffice's text filter is no better (`internal-format`) |
+| Markdown / DOTX / DOCM / previews | internal    | not in LibreOffice's writer filter table                   |
+
+Every result reports the engine used, the preference, and a typed
+`fallbackReason`, so nothing pretends. On this machine (LibreOffice 26.8.3.1)
+DOCX→PDF through the default path is a real 9-page PDF; a fresh profile costs
+~4 s and the reusable profile makes later conversions ~1.8 s. When LibreOffice
+is absent every path fails over to the internal engine with
+`engine-unavailable` — the `document_engine_status` tool shows the detection
+evidence (candidate paths, version, preference, last route).
 
 ## Conversion pairs
 

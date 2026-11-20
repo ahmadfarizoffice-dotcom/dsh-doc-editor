@@ -17,10 +17,18 @@
  *    then the documented standard install locations. A candidate only becomes
  *    the selected engine after `soffice --version` exits 0 and prints a
  *    recognisable LibreOffice version.
- *  - Each conversion gets a unique `-env:UserInstallation` profile under a
- *    per-call temporary directory, so concurrent calls cannot share state. The
- *    temporary directory (profile + output) is removed on success, failure and
- *    timeout.
+ *  - Conversions are serialized through one process-owned, reusable
+ *    `-env:UserInstallation` profile (under the OS temp directory, named from
+ *    the adapter executable). First-run profile creation costs seconds on
+ *    Windows, so reusing it is what makes LibreOffice viable as the default
+ *    engine. A conversion that starts while the shared profile is already in
+ *    use gets its own unique profile instead of colliding: two LibreOffice
+ *    processes writing the same profile is measurably unsafe (the second one
+ *    exits non-zero with no output). Acquisition decisions are serialized by a
+ *    lock, unique profiles are removed afterwards, and the shared profile is
+ *    removed by `disposeLibreOfficeProfiles()`.
+ *  - The per-call output directory is always unique and always removed on
+ *    success, failure and timeout.
  *  - Output must exist and be non-empty before it is reported. Partial files
  *    from a failed or killed process are never returned as success.
  *
@@ -30,7 +38,7 @@
  * Windows without a shell; script shims are never auto-discovered from `PATH`.
  */
 import { spawn } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, rmSync, statSync } from "node:fs";
 import {
   mkdir,
   mkdtemp,
@@ -854,6 +862,189 @@ export async function detectLibreOffice(
   return available;
 }
 
+/* -------------------------------------------------------- user profiles */
+
+/**
+ * One LibreOffice process may own a profile at a time. The shared profile is
+ * created once per adapter executable and reused by every sequential
+ * conversion; concurrent conversions get isolated profiles instead.
+ */
+export const SHARED_PROFILE_PREFIX = "dsh-libreoffice-profile-";
+
+export type ProfileMode = "shared" | "unique";
+
+export interface LibreOfficeProfileDiagnostics {
+  /** Shared profile directory used for this executable, if it was created. */
+  sharedProfile: string | null;
+  /** True while a conversion is using the shared profile. */
+  sharedInUse: boolean;
+  /** Every profile currently handed to a running conversion. */
+  activeProfiles: string[];
+  /** All shared profiles created by this process (one per executable). */
+  knownSharedProfiles: string[];
+}
+
+interface ProfileLease {
+  path: string;
+  mode: ProfileMode;
+  release: () => Promise<void>;
+}
+
+const sharedProfiles = new Set<string>();
+const activeProfiles = new Set<string>();
+let sharedProfileOwner: string | null = null;
+let profileDecisionQueue: Promise<void> = Promise.resolve();
+let exitHookInstalled = false;
+
+/**
+ * Removes process-owned shared profiles when the host process exits, so a
+ * long-lived editor or MCP server does not leave a profile directory behind.
+ * The hook is installed once, lazily, and is best-effort only.
+ */
+function installProfileExitHook(): void {
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.once("exit", () => {
+    for (const profilePath of sharedProfiles) {
+      try {
+        rmSync(profilePath, { recursive: true, force: true });
+      } catch {
+        // Best-effort cleanup: process exit must never fail because of this.
+      }
+    }
+  });
+}
+
+/**
+ * Absolute, deterministic shared-profile path for one adapter executable in
+ * this process. The PID is part of the name: the profile is *process-owned*, so
+ * two Node processes (an editor, an MCP server, a test worker) can never fight
+ * over the same LibreOffice user installation.
+ */
+export function libreOfficeSharedProfilePath(executable: string): string {
+  const digest = createHash("sha1")
+    .update(executable.toLowerCase())
+    .digest("hex")
+    .slice(0, 12);
+  return path.join(
+    tmpdir(),
+    `${SHARED_PROFILE_PREFIX}${digest}-${process.pid}`,
+  );
+}
+
+/**
+ * Claims the shared profile or, when another conversion already owns it,
+ * creates an isolated profile. The decision is serialized by a promise lock so
+ * two callers can never both believe they own the shared profile; the
+ * conversions themselves still run in parallel.
+ */
+async function acquireProfile(
+  executable: string,
+  options: { tempDirectory?: string; forceUnique?: boolean } = {},
+): Promise<ProfileLease> {
+  const previous = profileDecisionQueue;
+  let releaseDecision!: () => void;
+  profileDecisionQueue = new Promise<void>((resolve) => {
+    releaseDecision = resolve;
+  });
+  await previous.catch(() => undefined);
+  try {
+    if (options.forceUnique !== true) {
+      const sharedPath = libreOfficeSharedProfilePath(executable);
+      if (sharedProfileOwner === null) {
+        sharedProfileOwner = sharedPath;
+        try {
+          await mkdir(sharedPath, { recursive: true });
+        } catch (error) {
+          sharedProfileOwner = null;
+          throw new LibreOfficeError(
+            "ENGINE_FAILED",
+            `Could not create the shared LibreOffice profile: ${(error as Error).message}`,
+            { profile: sharedPath },
+          );
+        }
+        sharedProfiles.add(sharedPath);
+        activeProfiles.add(sharedPath);
+        installProfileExitHook();
+        let released = false;
+        return {
+          path: sharedPath,
+          mode: "shared",
+          release: async () => {
+            if (released) return;
+            released = true;
+            activeProfiles.delete(sharedPath);
+            if (sharedProfileOwner === sharedPath) sharedProfileOwner = null;
+            // The directory is deliberately kept: reusing it is the point.
+          },
+        };
+      }
+    }
+    const uniquePath = await mkdtemp(
+      path.join(
+        options.tempDirectory ?? tmpdir(),
+        "dsh-libreoffice-concurrent-",
+      ),
+    ).catch((error: Error) => {
+      throw new LibreOfficeError(
+        "ENGINE_FAILED",
+        `Could not create an isolated LibreOffice profile: ${error.message}`,
+      );
+    });
+    activeProfiles.add(uniquePath);
+    let released = false;
+    return {
+      path: uniquePath,
+      mode: "unique",
+      release: async () => {
+        if (released) return;
+        released = true;
+        activeProfiles.delete(uniquePath);
+        await rm(uniquePath, { recursive: true, force: true }).catch(
+          () => undefined,
+        );
+      },
+    };
+  } finally {
+    releaseDecision();
+  }
+}
+
+/** Read-only view of the profile state, for status tools and tests. */
+export function libreOfficeProfileDiagnostics(): LibreOfficeProfileDiagnostics {
+  return {
+    sharedProfile: sharedProfileOwner,
+    sharedInUse: sharedProfileOwner !== null,
+    activeProfiles: [...activeProfiles],
+    knownSharedProfiles: [...sharedProfiles],
+  };
+}
+
+/**
+ * Removes every idle shared profile. A profile with a conversion in flight is
+ * reported as skipped instead of being deleted underneath LibreOffice. Tests
+ * and long-lived hosts call this when they are done with the adapter.
+ */
+export async function disposeLibreOfficeProfiles(): Promise<{
+  removed: string[];
+  skipped: string[];
+}> {
+  const removed: string[] = [];
+  const skipped: string[] = [];
+  for (const profilePath of [...sharedProfiles]) {
+    if (profilePath === sharedProfileOwner) {
+      skipped.push(profilePath);
+      continue;
+    }
+    await rm(profilePath, { recursive: true, force: true }).catch(
+      () => undefined,
+    );
+    sharedProfiles.delete(profilePath);
+    removed.push(profilePath);
+  }
+  return { removed, skipped };
+}
+
 /* ------------------------------------------------------- conversion format */
 
 export interface ResolvedConversionFormat {
@@ -960,6 +1151,12 @@ export interface ConvertWithLibreOfficeOptions {
   workspaceRoot?: string;
   /** Internal/test hook: directory that holds per-call temporary folders. */
   tempDirectory?: string;
+  /**
+   * Force an isolated profile even when the shared profile is free. Used for a
+   * bounded retry after a transient failure on the shared profile and by
+   * differential tests that need independent profiles.
+   */
+  isolatedProfile?: boolean;
 }
 
 export interface LibreOfficeConversionResult {
@@ -977,6 +1174,16 @@ export interface LibreOfficeConversionResult {
   warnings: string[];
   command: { executable: string; args: string[] };
   userProfile: string;
+  /** `shared` when the reusable profile was used, `unique` under concurrency. */
+  userProfileMode: ProfileMode;
+  /** True when this conversion reused the process-owned profile. */
+  profileReused: boolean;
+  /** Per-call output directory; removed before the promise resolves. */
+  conversionTempDirectory: string;
+  /** True when a transient shared-profile failure was retried successfully. */
+  retried: boolean;
+  /** Number of LibreOffice process attempts (1, or 2 after a retry). */
+  attempts: number;
   stdout: string;
   stderr: string;
   /** Base64 payload when no output path was requested. */
@@ -1224,21 +1431,25 @@ async function performConversion(
     );
   }
 
-  const tempDirectory =
-    options.tempDirectory ?? path.join(tmpdir(), "dsh-libreoffice-");
-  const tempRoot = await mkdtemp(tempDirectory).catch((error: Error) => {
-    throw new LibreOfficeError(
-      "ENGINE_FAILED",
-      `Could not create a temporary conversion directory: ${error.message}`,
-    );
+  // The profile is process-owned and reused (first-run creation is expensive);
+  // the output directory is per-call so parallel conversions cannot collide.
+  const lease = await acquireProfile(detection.path, {
+    tempDirectory: options.tempDirectory,
+    forceUnique: options.isolatedProfile === true,
   });
-  const outDirectory = path.join(tempRoot, "out");
-  const userProfile = path.join(tempRoot, "profile");
-  const profileUrl = pathToFileURL(userProfile).href;
-
+  let tempRoot: string | undefined;
   try {
+    tempRoot = await mkdtemp(
+      path.join(options.tempDirectory ?? tmpdir(), "dsh-libreoffice-"),
+    ).catch((error: Error) => {
+      throw new LibreOfficeError(
+        "ENGINE_FAILED",
+        `Could not create a temporary conversion directory: ${error.message}`,
+      );
+    });
+    const outDirectory = path.join(tempRoot, "out");
+    const profileUrl = pathToFileURL(lease.path).href;
     await mkdir(outDirectory, { recursive: true });
-    await mkdir(userProfile, { recursive: true });
 
     const args = [
       `-env:UserInstallation=${profileUrl}`,
@@ -1386,6 +1597,11 @@ async function performConversion(
       warnings: collectWarnings(probe.stdout, probe.stderr),
       command: { executable: command, args: fullArgs },
       userProfile: profileUrl,
+      userProfileMode: lease.mode,
+      profileReused: lease.mode === "shared",
+      conversionTempDirectory: tempRoot,
+      retried: false,
+      attempts: 1,
       stdout: probe.stdout,
       stderr: probe.stderr,
       ...(outputPath === undefined
@@ -1394,21 +1610,44 @@ async function performConversion(
     };
     return { buffer, outputPath: outputPath ?? null, result, detection };
   } finally {
-    await rm(tempRoot, { recursive: true, force: true }).catch(() => undefined);
+    if (tempRoot !== undefined) {
+      await rm(tempRoot, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+    }
+    await lease.release();
   }
 }
 
 /**
- * Converts one document through LibreOffice. The temporary profile and output
- * directory are always removed. When `outputPath` is omitted the bytes are
- * returned as base64; when it is present they are written there and also
- * reported as a size and SHA-256.
+ * Converts one document through LibreOffice. The per-call output directory and
+ * any isolated concurrent profile are always removed; the reusable shared
+ * profile is retained for the next conversion. When `outputPath` is omitted the
+ * bytes are returned as base64; when it is present they are written there and
+ * also reported as a size and SHA-256.
+ *
+ * A transient process failure on the shared profile (the reusable profile is
+ * the fast path, but LibreOffice occasionally rejects a rapid hand-off) is
+ * retried once with an isolated profile. Timeouts and missing-engine errors are
+ * never retried: they must reach the caller immediately.
  */
 export async function convertWithLibreOffice(
   options: ConvertWithLibreOfficeOptions,
 ): Promise<LibreOfficeConversionResult> {
-  const { result } = await performConversion(options);
-  return result;
+  try {
+    const { result } = await performConversion(options);
+    return result;
+  } catch (error) {
+    const transient =
+      error instanceof LibreOfficeError &&
+      (error.code === "ENGINE_FAILED" || error.code === "OUTPUT_MISSING");
+    if (!transient || options.isolatedProfile === true) throw error;
+    const { result } = await performConversion({
+      ...options,
+      isolatedProfile: true,
+    });
+    return { ...result, retried: true, attempts: 2 };
+  }
 }
 
 export interface RenderPdfResult {
@@ -1421,6 +1660,8 @@ export interface RenderPdfResult {
   version: string | null;
   path: null;
   warnings: string[];
+  retried: boolean;
+  attempts: number;
 }
 
 /**
@@ -1450,7 +1691,7 @@ export async function renderPdfWithLibreOffice(
       { docxPath: validated, extension },
     );
   }
-  const { result } = await performConversion({
+  const result = await convertWithLibreOffice({
     ...options,
     inputPath: validated,
     format: "pdf",
@@ -1466,6 +1707,8 @@ export async function renderPdfWithLibreOffice(
     version: result.version,
     path: null,
     warnings: result.warnings,
+    retried: result.retried,
+    attempts: result.attempts,
   };
 }
 

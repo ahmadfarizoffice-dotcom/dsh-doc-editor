@@ -588,8 +588,23 @@ export async function submitDialog() {
   await sleep(120);
 }
 
-/** Seed selected with --seed, so case order varies per run without changing coverage. */
+/** Seed selected with --seed/--seeds, so case order varies per run without changing coverage. */
 export function caseSeed() {
   const value = Number(process.env.E2E_SEED || "1");
   return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+/**
+ * Deterministic case order for the current seed.
+ *
+ * A rotation (not a shuffle) keeps every case in the suite: the seed decides
+ * which case runs first, never which cases run. Two runs with the same seed
+ * therefore execute the identical sequence, and different seeds still cover the
+ * whole suite.
+ */
+export function seededCases(cases) {
+  const list = Array.isArray(cases) ? cases.slice() : [];
+  if (list.length === 0) return list;
+  const offset = caseSeed() % list.length;
+  return list.slice(offset).concat(list.slice(0, offset));
 }

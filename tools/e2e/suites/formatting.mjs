@@ -22,6 +22,7 @@ import {
   sleep,
   totalOps,
   waitForOp,
+  seededCases,
 } from "../kit.mjs";
 
 const PARAGRAPHS = ["Alpha paragraph.", "Beta paragraph.", "Gamma paragraph."];
@@ -121,7 +122,7 @@ function buildCases() {
       }
     }
   }
-  return cases.slice(0, 150);
+  return seededCases(cases).slice(0, 150);
 }
 
 async function blocksWith(ids) {

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Conversion engine.
  *
  * The engine is UI-independent: it takes bytes (or an in-memory document),
@@ -350,6 +350,15 @@ function normalizeText(text: string): string {
     .trim();
 }
 
+/**
+ * Normalises document text for conversion fidelity comparisons. Exposed so the
+ * service can measure a LibreOffice result with exactly the same rules the
+ * internal adapters are measured with.
+ */
+export function normalizeConversionText(text: string): string {
+  return normalizeText(text);
+}
+
 function tokenCounts(text: string): Map<string, number> {
   const counts = new Map<string, number>();
   if (text.length === 0) return counts;
@@ -390,6 +399,14 @@ function structuralScore(before: DocumentStats, after: DocumentStats): number {
       ratio(before.tables, after.tables) * 0.25 +
       ratio(before.images, after.images) * 0.25,
   );
+}
+
+/** Structural preservation of `after` relative to `before` (0..1). */
+export function structuralPreservationScore(
+  before: DocumentStats,
+  after: DocumentStats,
+): number {
+  return structuralScore(before, after);
 }
 
 function lossPenalty(losses: ConversionLoss[]): number {

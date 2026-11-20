@@ -156,6 +156,18 @@ Independent of the UI, with a capability matrix and loss reporting; all required
 pairs are wired where an adapter exists. See
 [SUPPORTED_FORMATS.md](SUPPORTED_FORMATS.md) for the exact matrix and fidelity.
 
+**LibreOffice is the default conversion and PDF rendering engine** when it is
+installed: PDF always uses it, and DOCX/ODT/RTF/HTML exports use it when the
+result keeps the document text (measured by re-import). The engine
+preference is `auto` (LibreOffice-first), `libreoffice` or `internal` per
+service; every fallback to the internal engine is reported as a typed
+`fallbackReason` (`engine-unavailable`, `conversion-failed`, `timeout`,
+`text-loss`) and never silently. `txt` keeps the internal adapter (LibreOffice's
+Text filter is not more faithful for rich documents, and the internal path is
+deterministic and fast), and markdown/templates are not in LibreOffice's writer
+filter table. A process-owned LibreOffice profile is reused across sequential
+conversions; concurrent conversions get isolated profiles.
+
 ## 7. Ask AI
 
 Ask / Suggest / Edit modes, document context, selection context, structured
@@ -168,7 +180,7 @@ changes itself and never replaces HTML.
 
 ## 8. MCP server and Harness plugin
 
-**MCP server:** 52 tools, 8 resources, 8 prompts, typed zod schemas, JSON Schema
+**MCP server:** 53 tools, 8 resources, 8 prompts, typed zod schemas, JSON Schema
 manifest, workspace confinement, read-only mode, audit logging,
 destructive-operation annotations — **✅** (see [MCP.md](MCP.md)).
 

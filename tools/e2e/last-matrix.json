@@ -1,0 +1,328 @@
+{
+  "generatedAt": "2026-11-20T08:10:14.235Z",
+  "seeds": [1337, 424242, 9],
+  "count": 150,
+  "suites": [
+    "shortcuts",
+    "selection-multiblock",
+    "typing-integrity",
+    "formatting",
+    "structure",
+    "undo-redo",
+    "open-save-export",
+    "hostile-input",
+    "chaos",
+    "differential"
+  ],
+  "totals": {
+    "cases": 4500,
+    "passed": 4500,
+    "failed": 0
+  },
+  "runnerFailures": 0,
+  "complete": true,
+  "cells": 30,
+  "matrix": [
+    {
+      "seed": 1337,
+      "suite": "shortcuts",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 66171,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 1337,
+      "suite": "selection-multiblock",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 60439,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 1337,
+      "suite": "typing-integrity",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 128164,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 1337,
+      "suite": "formatting",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 69675,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 1337,
+      "suite": "structure",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 191835,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 1337,
+      "suite": "undo-redo",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 199813,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 1337,
+      "suite": "open-save-export",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 85828,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 1337,
+      "suite": "hostile-input",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 101759,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 1337,
+      "suite": "chaos",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 208509,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 1337,
+      "suite": "differential",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 181005,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 424242,
+      "suite": "shortcuts",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 60601,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 424242,
+      "suite": "selection-multiblock",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 60697,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 424242,
+      "suite": "typing-integrity",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 130698,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 424242,
+      "suite": "formatting",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 71599,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 424242,
+      "suite": "structure",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 189658,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 424242,
+      "suite": "undo-redo",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 190975,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 424242,
+      "suite": "open-save-export",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 79500,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 424242,
+      "suite": "hostile-input",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 92804,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 424242,
+      "suite": "chaos",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 201528,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 424242,
+      "suite": "differential",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 178306,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 9,
+      "suite": "shortcuts",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 61920,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 9,
+      "suite": "selection-multiblock",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 61488,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 9,
+      "suite": "typing-integrity",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 109287,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 9,
+      "suite": "formatting",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 64225,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 9,
+      "suite": "structure",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 186019,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 9,
+      "suite": "undo-redo",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 197847,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 9,
+      "suite": "open-save-export",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 87316,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 9,
+      "suite": "hostile-input",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 104012,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 9,
+      "suite": "chaos",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 210502,
+      "bootAttempts": 0,
+      "failures": []
+    },
+    {
+      "seed": 9,
+      "suite": "differential",
+      "cases": 150,
+      "passed": 150,
+      "failed": 0,
+      "ms": 184280,
+      "bootAttempts": 0,
+      "failures": []
+    }
+  ],
+  "worstCase": null
+}
