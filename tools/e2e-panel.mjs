@@ -50,6 +50,7 @@ const selected =
         .filter(Boolean);
 const count = Number(flag("--count", "150"));
 const only = flag("--only", "");
+const offset = Number(flag("--offset", "0"));
 const trace = argv.includes("--trace");
 const seed = Number(flag("--seed", "1"));
 process.env.E2E_SEED = String(seed);
@@ -141,7 +142,7 @@ async function main() {
       const cases = suite
         .build()
         .filter((item) => (only ? String(item.id).includes(only) : true))
-        .slice(0, count);
+        .slice(offset, offset + count);
       const started = Date.now();
       const failures = [];
       let passed = 0;

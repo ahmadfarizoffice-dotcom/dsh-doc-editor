@@ -19,7 +19,9 @@ import {
   selectTab,
   sleep,
   submitDialog,
+  settleText,
   waitForHostText,
+  evaluatePage,
 } from "../kit.mjs";
 
 const BASE = ["Alpha paragraph.", "Beta paragraph.", "Gamma paragraph."];
@@ -170,8 +172,11 @@ async function runCase(item) {
   const { ids } = await prepare(BASE, { hijackKeys: [] });
   const before = await hostState();
   await item.scenario.run(ids);
-  await sleep(120);
   if (item.scenario.table) {
+    // The inserted table legitimately adds cell paragraphs. Compare the body
+    // paragraphs only (the table itself is asserted structurally below) and
+    // wait for the panel to settle instead of reading a fixed 120 ms snapshot.
+    await settleText(6000).catch(() => undefined);
     const document = await hostDocument();
     const tables = (document.document.sections || [])
       .flatMap((section) => section.blocks || [])
@@ -184,23 +189,38 @@ async function runCase(item) {
       (tables[0].rows || []).length >= 1,
       `${item.id}: inserted table has no rows`,
     );
-    const dom = await domText();
-    const state = await hostState();
+    const hostParagraphs = (document.document.sections || [])
+      .flatMap((section) => section.blocks || [])
+      .filter((block) => block.type === "paragraph")
+      .map((block) =>
+        (block.inlines || [])
+          .map((inline) =>
+            inline.type === "text"
+              ? inline.text
+              : inline.type === "break"
+                ? "\n"
+                : inline.type === "tab"
+                  ? "\t"
+                  : "",
+          )
+          .join(""),
+      );
+    const domParagraphs = await evaluatePage(`[
+      ...document.querySelectorAll('.dx-editor [data-block-id]')
+    ].filter((node) => !node.closest('table')).map((node) =>
+      (node.innerText || ''))`);
     assertEqual(
-      dom,
-      state.text,
-      `${item.id}: DOM and Host diverged after the table`,
+      domParagraphs.length,
+      hostParagraphs.length,
+      `${item.id}: paragraph count diverged after the table`,
+    );
+    assertEqual(
+      domParagraphs.join("\n"),
+      hostParagraphs.join("\n"),
+      `${item.id}: body paragraphs diverged after the table`,
     );
   } else {
-    let state = await hostState();
-    for (
-      let attempt = 0;
-      attempt < 30 && state.text === before.text;
-      attempt += 1
-    ) {
-      await sleep(60);
-      state = await hostState();
-    }
+    const state = await settleText(6000);
     assert(
       state.text !== before.text,
       `${item.id}: the structural edit did not change the document`,

@@ -1,4 +1,4 @@
-# Testing
+﻿# Testing
 
 Everything below is executed locally and in CI. Commands are run from the
 repository root after `pnpm install`.
@@ -22,30 +22,36 @@ node tools/validate-mcp-schemas.mjs
 Verified locally on 2026-11-18 (Node 24, Windows; CI runs the same commands on
 Linux with Node 22):
 
-| Command                                                       | Result                                                                                                 |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `vitest run` (whole workspace)                                | **21 files / 126 tests passed**                                                                        |
-| `tsc -p packages/core/tsconfig.json --noEmit`                 | pass                                                                                                   |
-| `tsc -b packages/core apps/mcp apps/cli`                      | pass                                                                                                   |
-| `tsc -p apps/web/tsconfig.json --noEmit` (client)             | pass                                                                                                   |
-| `tsc -p apps/web/tsconfig.server.json --noEmit` (server)      | pass                                                                                                   |
-| `eslint .`                                                    | 0 errors (warnings only for unused type imports)                                                       |
-| `prettier --check .`                                          | pass                                                                                                   |
-| `pnpm --filter <pkg> run build` (core, mcp, cli, web)         | pass                                                                                                   |
-| `node tools/check-skills.mjs`                                 | OK — 12 skills, 50 canonical tools                                                                     |
-| `node tools/validate-mcp-schemas.mjs`                         | OK — 50 tools, 8 resources, 8 prompts                                                                  |
-| `node tools/build-dsh-plugin.mjs`                             | 3.97 MiB single-file engine, 50 tools, PDF smoke pass                                                  |
-| `node tools/check-dsh-plugin.mjs`                             | OK — manifest, 14 files, 26 tools, locale/icon/detail checks                                           |
-| `node --test dsh-plugin/test/*.mjs`                           | **102 tests passed** (host API, browse/workspace, late Web server, ribbon, logic, panel)               |
-| `node tools/measure-ribbon.mjs`                               | ribbon height 50.31 px on all 7 tabs at 805 px viewport (= 1/16)                                       |
-| `node tools/probe-panel.mjs`                                  | File backstage opens without changing height; folder open → title, workspace and chat session prepared |
-| `node tools/check-integrations.mjs`                           | OK — Claude plugin (12 skills, 3 commands), Codex, Antigravity, OpenCode                               |
-| DSH install (Plugins → Add plugin, GitHub link)               | `application: applied`; 26 `document_*` tools + Documents panel                                        |
-| DSH Documents API (`/api/dsh-documents`)                      | bootstrap/op/ops/save/search, plus browse/workspace/open-path                                          |
-| `node apps/cli/dist/main.js verify <fixture>`                 | 6/6 checks pass (9 pages, 21,704-byte PDF)                                                             |
-| `node apps/cli/dist/main.js roundtrip <fixture>`              | text identical, 310→310 paragraphs, 3→3 sections                                                       |
-| stdio MCP smoke (real `apps/mcp/dist/main.js` via SDK client) | 50 tools listed, create/read/resource/prompt all OK                                                    |
-| web server smoke (`:4317`)                                    | health, create, list, export PDF/HTML, render PDF/HTML all 200                                         |
+| Command                                                             | Result                                                                                                 |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `vitest run` (whole workspace)                                      | **28 files / 615 tests passed** (core + engine + fuzz/differential/anomaly/MC-DC)                      |
+| `tsc -p packages/core/tsconfig.json --noEmit`                       | pass                                                                                                   |
+| `tsc -b packages/core apps/mcp apps/cli`                            | pass                                                                                                   |
+| `tsc -p apps/web/tsconfig.json --noEmit` (client)                   | pass                                                                                                   |
+| `tsc -p apps/web/tsconfig.server.json --noEmit` (server)            | pass                                                                                                   |
+| `eslint .`                                                          | 0 errors (warnings only for unused type imports)                                                       |
+| `prettier --check .`                                                | pass                                                                                                   |
+| `pnpm --filter <pkg> run build` (core, mcp, cli, web)               | pass                                                                                                   |
+| `node tools/check-skills.mjs`                                       | OK — 12 skills, 50 canonical tools                                                                     |
+| `node tools/validate-mcp-schemas.mjs`                               | OK — **52 tools**, 8 resources, 8 prompts                                                              |
+| `node tools/build-dsh-plugin.mjs`                                   | 4.03 MiB single-file engine, **52 tools**, PDF smoke pass                                              |
+| `node tools/check-dsh-plugin.mjs`                                   | OK — manifest, 14 files, **28 default Host tools**, locale/icon/detail checks                          |
+| `node --test dsh-plugin/test/*.mjs`                                 | **120 tests passed** (host API, browse/workspace, late Web server, ribbon, logic, panel, interaction)  |
+| `node tools/e2e-panel.mjs --suite shortcuts --count 150`            | **150/150** shortcuts, 59 s (CDP-driven, real Chrome)                                                  |
+| `node tools/e2e-panel.mjs --suite selection-multiblock --count 150` | **150/150** cross-block selection and formatting                                                       |
+| `node tools/e2e-panel.mjs --suite typing-integrity --count 150`     | **149/150** (one in-flight interleaving remains open, seed 1337)                                       |
+| `node tools/e2e-panel.mjs --suite structure` (per scenario)         | **121/121** non-table cases + table-insert 3/3, table-insert-then-type 7/7                             |
+| `node tools/fuzz/run.mjs --seed 1337 --cases 150`                   | **461 cases: 393 pass, 0 fail, 68 documented conversion losses**                                       |
+| `node tools/libreoffice-smoke.mjs`                                  | LibreOffice **26.8.3.1** real: DOCX→PDF **398,366 B / 9 pages**; internal 21,704 B / 9 pages           |
+| `node tools/measure-ribbon.mjs`                                     | ribbon height 50.31 px on all 7 tabs at 805 px viewport (= 1/16)                                       |
+| `node tools/probe-panel.mjs`                                        | File backstage opens without changing height; folder open → title, workspace and chat session prepared |
+| `node tools/check-integrations.mjs`                                 | OK — Claude plugin (12 skills, 3 commands), Codex, Antigravity, OpenCode                               |
+| DSH install (Plugins → Add plugin, GitHub link)                     | `application: applied`; 26 `document_*` tools + Documents panel                                        |
+| DSH Documents API (`/api/dsh-documents`)                            | bootstrap/op/ops/save/search, plus browse/workspace/open-path                                          |
+| `node apps/cli/dist/main.js verify <fixture>`                       | 6/6 checks pass (9 pages, 21,704-byte PDF)                                                             |
+| `node apps/cli/dist/main.js roundtrip <fixture>`                    | text identical, 310→310 paragraphs, 3→3 sections                                                       |
+| stdio MCP smoke (real `apps/mcp/dist/main.js` via SDK client)       | 50 tools listed, create/read/resource/prompt all OK                                                    |
+| web server smoke (`:4317`)                                          | health, create, list, export PDF/HTML, render PDF/HTML all 200                                         |
 
 ## The fixture family
 
