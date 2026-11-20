@@ -216,11 +216,25 @@ async function runCase(item) {
   }
 
   const stateAfter = await hostState();
-  assertEqual(
-    stateAfter.text,
-    stateBefore.text,
-    `${item.id}: formatting changed the document text`,
-  );
+  if (item.format.kind === "list") {
+    // A list insert intentionally adds a paragraph (and therefore a break);
+    // it must not change any visible character.
+    assertEqual(
+      stateAfter.text.replace(/\n/gu, ""),
+      stateBefore.text.replace(/\n/gu, ""),
+      `${item.id}: the list insert changed document characters`,
+    );
+    assert(
+      stateAfter.blocks.length > stateBefore.blocks.length,
+      `${item.id}: the list insert added no block`,
+    );
+  } else {
+    assertEqual(
+      stateAfter.text,
+      stateBefore.text,
+      `${item.id}: formatting changed the document text`,
+    );
+  }
   const errors = await pageErrors();
   assertEqual(
     errors.length,

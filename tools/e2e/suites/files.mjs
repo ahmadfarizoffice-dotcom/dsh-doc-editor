@@ -112,7 +112,14 @@ const SCENARIOS = [
     run: async () => clickExport("DOCX"),
     net: "/export",
   },
-  { id: "export-pdf", run: async () => clickExport("PDF"), net: "/export" },
+  {
+    id: "export-pdf",
+    run: async () => clickExport("PDF"),
+    net: "/export",
+    // The harness Host advertises PDF but has no renderer: the panel must
+    // report the Host refusal instead of silently doing nothing.
+    expectError: /FORMAT|PDF|render/i,
+  },
   { id: "export-html", run: async () => clickExport("HTML"), net: "/export" },
   { id: "export-md", run: async () => clickExport("MD"), net: "/export" },
   { id: "export-txt", run: async () => clickExport("TXT"), net: "/export" },
@@ -183,11 +190,13 @@ async function runCase(item) {
       entries.length > 0,
       `${item.id}: no ${scenario.net} request was made`,
     );
-    assertEqual(
-      await errorText(),
-      null,
-      `${item.id}: error bar after ${scenario.id}`,
-    );
+    const bar = await errorText();
+    if (scenario.expectError)
+      assert(
+        bar && scenario.expectError.test(bar),
+        `${item.id}: expected a reported Host refusal, saw ${bar}`,
+      );
+    else assertEqual(bar, null, `${item.id}: error bar after ${scenario.id}`);
   } else {
     await scenario.run();
     if (scenario.dialog) {

@@ -1,4 +1,4 @@
-﻿# Testing
+# Testing
 
 Everything below is executed locally and in CI. Commands are run from the
 repository root after `pnpm install`.
@@ -39,8 +39,14 @@ Linux with Node 22):
 | `node --test dsh-plugin/test/*.mjs`                                 | **120 tests passed** (host API, browse/workspace, late Web server, ribbon, logic, panel, interaction)  |
 | `node tools/e2e-panel.mjs --suite shortcuts --count 150`            | **150/150** shortcuts, 59 s (CDP-driven, real Chrome)                                                  |
 | `node tools/e2e-panel.mjs --suite selection-multiblock --count 150` | **150/150** cross-block selection and formatting                                                       |
-| `node tools/e2e-panel.mjs --suite typing-integrity --count 150`     | **149/150** (one in-flight interleaving remains open, seed 1337)                                       |
-| `node tools/e2e-panel.mjs --suite structure` (per scenario)         | **121/121** non-table cases + table-insert 3/3, table-insert-then-type 7/7                             |
+| `node tools/e2e-panel.mjs --suite typing-integrity --count 150`     | **147/150** (3 × backspace timing races remain open, seed 1337)                                        |
+| `node tools/e2e-panel.mjs --suite structure --count 150`            | **150/150** (seed 1337)                                                                                |
+| `node tools/e2e-panel.mjs --suite formatting --count 150`           | **150/150**                                                                                            |
+| `node tools/e2e-panel.mjs --suite undo-redo --count 150`            | **150/150**                                                                                            |
+| `node tools/e2e-panel.mjs --suite open-save-export --count 150`     | **150/150**                                                                                            |
+| `node tools/e2e-panel.mjs --suite hostile-input --count 150`        | **150/150** (9k paste, NUL, emoji/RTL/combining)                                                       |
+| `node tools/e2e-panel.mjs --suite differential --count 150`         | **150/150** (UI arm vs Host-API arm)                                                                   |
+| `node tools/e2e-panel.mjs --suite chaos --count 150`                | **140/150** (10 stale-DOM cases after injected failures remain open)                                   |
 | `node tools/fuzz/run.mjs --seed 1337 --cases 150`                   | **461 cases: 393 pass, 0 fail, 68 documented conversion losses**                                       |
 | `node tools/libreoffice-smoke.mjs`                                  | LibreOffice **26.8.3.1** real: DOCX→PDF **398,366 B / 9 pages**; internal 21,704 B / 9 pages           |
 | `node tools/measure-ribbon.mjs`                                     | ribbon height 50.31 px on all 7 tabs at 805 px viewport (= 1/16)                                       |

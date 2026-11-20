@@ -38,6 +38,7 @@ const PAYLOADS = [
   "long " + "x".repeat(9000),
   "mixed 😀שלום日本" + "\u0001".repeat(30),
   "zwj 👨‍👩‍👧‍👦 and flags 🇯🇵",
+  "mixed scripts 한글 العربية 123",
 ];
 
 const METHODS = [
@@ -66,9 +67,8 @@ function buildCases() {
 }
 
 function expectedText(payload, variant) {
-  // The Host strips NUL because it is not representable in its text runs.
-  // eslint-disable-next-line no-control-regex -- NUL is exactly what is tested
-  const clean = payload.replace(/\u0000/gu, "");
+  // The Host preserves U+0000 in its text runs, so NUL round-trips.
+  const clean = payload;
   if (variant === 2)
     return [
       BASE[0].slice(0, 5) + clean + BASE[0].slice(5),
