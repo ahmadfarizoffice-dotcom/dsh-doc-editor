@@ -22,42 +22,44 @@ node tools/validate-mcp-schemas.mjs
 Verified locally on 2026-11-18 (Node 24, Windows; CI runs the same commands on
 Linux with Node 22):
 
-| Command                                                             | Result                                                                                                 |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `vitest run` (whole workspace)                                      | **28 files / 779 tests passed** (core + engine routing + fuzz/differential/anomaly/MC-DC)              |
-| `tsc -p packages/core/tsconfig.json --noEmit`                       | pass                                                                                                   |
-| `tsc -b packages/core apps/mcp apps/cli`                            | pass                                                                                                   |
-| `tsc -p apps/web/tsconfig.json --noEmit` (client)                   | pass                                                                                                   |
-| `tsc -p apps/web/tsconfig.server.json --noEmit` (server)            | pass                                                                                                   |
-| `eslint .`                                                          | 0 errors (warnings only for unused type imports)                                                       |
-| `prettier --check .`                                                | pass                                                                                                   |
-| `pnpm --filter <pkg> run build` (core, mcp, cli, web)               | pass                                                                                                   |
-| `node tools/check-skills.mjs`                                       | OK — 12 skills, 50 canonical tools                                                                     |
-| `node tools/validate-mcp-schemas.mjs`                               | OK — **52 tools**, 8 resources, 8 prompts                                                              |
-| `node tools/build-dsh-plugin.mjs`                                   | 4.03 MiB single-file engine, **52 tools**, PDF smoke pass                                              |
-| `node tools/check-dsh-plugin.mjs`                                   | OK — manifest, 14 files, **28 default Host tools**, locale/icon/detail checks                          |
-| `node --test dsh-plugin/test/*.mjs`                                 | **133 tests passed** (host API, browse/workspace, late Web server, ribbon, logic, panel, interaction)  |
-| `node tools/e2e-panel.mjs --suite shortcuts --count 150`            | **150/150** shortcuts, 59 s (CDP-driven, real Chrome)                                                  |
-| `node tools/e2e-panel.mjs --suite selection-multiblock --count 150` | **150/150** cross-block selection and formatting                                                       |
-| `node tools/e2e-panel.mjs --suite typing-integrity --count 150`     | **147/150** (3 × backspace timing races remain open, seed 1337)                                        |
-| `node tools/e2e-panel.mjs --suite structure --count 150`            | **150/150** (seed 1337)                                                                                |
-| `node tools/e2e-panel.mjs --suite formatting --count 150`           | **150/150**                                                                                            |
-| `node tools/e2e-panel.mjs --suite undo-redo --count 150`            | **150/150**                                                                                            |
-| `node tools/e2e-panel.mjs --suite open-save-export --count 150`     | **150/150**                                                                                            |
-| `node tools/e2e-panel.mjs --suite hostile-input --count 150`        | **150/150** (9k paste, NUL, emoji/RTL/combining)                                                       |
-| `node tools/e2e-panel.mjs --suite differential --count 150`         | **150/150** (UI arm vs Host-API arm)                                                                   |
-| `node tools/e2e-panel.mjs --suite chaos --count 150`                | **140/150** (10 stale-DOM cases after injected failures remain open)                                   |
-| `node tools/fuzz/run.mjs --seed 1337 --cases 150`                   | **461 cases: 393 pass, 0 fail, 68 documented conversion losses**                                       |
-| `node tools/libreoffice-smoke.mjs`                                  | LibreOffice **26.8.3.1** real: DOCX→PDF **398,366 B / 9 pages**; internal 21,704 B / 9 pages           |
-| `node tools/measure-ribbon.mjs`                                     | ribbon height 50.31 px on all 7 tabs at 805 px viewport (= 1/16)                                       |
-| `node tools/probe-panel.mjs`                                        | File backstage opens without changing height; folder open → title, workspace and chat session prepared |
-| `node tools/check-integrations.mjs`                                 | OK — Claude plugin (12 skills, 3 commands), Codex, Antigravity, OpenCode                               |
-| DSH install (Plugins → Add plugin, GitHub link)                     | `application: applied`; 26 `document_*` tools + Documents panel                                        |
-| DSH Documents API (`/api/dsh-documents`)                            | bootstrap/op/ops/save/search, plus browse/workspace/open-path                                          |
-| `node apps/cli/dist/main.js verify <fixture>`                       | 6/6 checks pass (9 pages, 21,704-byte PDF)                                                             |
-| `node apps/cli/dist/main.js roundtrip <fixture>`                    | text identical, 310→310 paragraphs, 3→3 sections                                                       |
-| stdio MCP smoke (real `apps/mcp/dist/main.js` via SDK client)       | 50 tools listed, create/read/resource/prompt all OK                                                    |
-| web server smoke (`:4317`)                                          | health, create, list, export PDF/HTML, render PDF/HTML all 200                                         |
+| Command                                                                  | Result                                                                                                                                          |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vitest run` (whole workspace)                                           | **28 files / 779 tests passed** (core + engine routing + fuzz/differential/anomaly/MC-DC)                                                       |
+| `tsc -p packages/core/tsconfig.json --noEmit`                            | pass                                                                                                                                            |
+| `tsc -b packages/core apps/mcp apps/cli`                                 | pass                                                                                                                                            |
+| `tsc -p apps/web/tsconfig.json --noEmit` (client)                        | pass                                                                                                                                            |
+| `tsc -p apps/web/tsconfig.server.json --noEmit` (server)                 | pass                                                                                                                                            |
+| `eslint .`                                                               | 0 errors (warnings only for unused type imports)                                                                                                |
+| `prettier --check .`                                                     | pass                                                                                                                                            |
+| `pnpm --filter <pkg> run build` (core, mcp, cli, web)                    | pass                                                                                                                                            |
+| `node tools/check-skills.mjs`                                            | OK — 12 skills, 50 canonical tools                                                                                                              |
+| `node tools/validate-mcp-schemas.mjs`                                    | OK — **52 tools**, 8 resources, 8 prompts                                                                                                       |
+| `node tools/build-dsh-plugin.mjs`                                        | 4.03 MiB single-file engine, **52 tools**, PDF smoke pass                                                                                       |
+| `node tools/check-dsh-plugin.mjs`                                        | OK — manifest, 14 files, **28 default Host tools**, locale/icon/detail checks                                                                   |
+| `node --test dsh-plugin/test/*.mjs`                                      | **133 tests passed** (host API, browse/workspace, late Web server, ribbon, logic, panel, interaction)                                           |
+| `node tools/e2e-panel.mjs --suite shortcuts --count 150`                 | **150/150** shortcuts, 59 s (CDP-driven, real Chrome)                                                                                           |
+| `node tools/e2e-panel.mjs --suite selection-multiblock --count 150`      | **150/150** cross-block selection and formatting                                                                                                |
+| `node tools/e2e-panel.mjs --suite typing-integrity --count 150`          | **147/150** (3 × backspace timing races remain open, seed 1337)                                                                                 |
+| `node tools/e2e-panel.mjs --suite structure --count 150`                 | **150/150** (seed 1337)                                                                                                                         |
+| `node tools/e2e-panel.mjs --suite formatting --count 150`                | **150/150**                                                                                                                                     |
+| `node tools/e2e-panel.mjs --suite undo-redo --count 150`                 | **150/150**                                                                                                                                     |
+| `node tools/e2e-panel.mjs --suite open-save-export --count 150`          | **150/150**                                                                                                                                     |
+| `node tools/e2e-panel.mjs --suite hostile-input --count 150`             | **150/150** (9k paste, NUL, emoji/RTL/combining)                                                                                                |
+| `node tools/e2e-panel.mjs --suite differential --count 150`              | **150/150** (UI arm vs Host-API arm)                                                                                                            |
+| `node tools/e2e-panel.mjs --suite chaos --count 150`                     | **150/150**                                                                                                                                     |
+| `node tools/e2e-panel.mjs --suite all --count 150 --seeds 1337,424242,9` | **4500/4500** — 10 suites × 3 seeds × 150 cases, one unattended pass, exit 0                                                                    |
+| `node tools/engine-matrix.mjs`                                           | **LibreOffice default**: DOCX 27,167 B, ODT 46,380 B, PDF 398,204 B via LibreOffice; RTF/HTML/TXT stay internal (`text-loss`/`internal-format`) |
+| `node tools/fuzz/run.mjs --seed 1337 --cases 150`                        | **461 cases: 393 pass, 0 fail, 68 documented conversion losses**                                                                                |
+| `node tools/libreoffice-smoke.mjs`                                       | LibreOffice **26.8.3.1** real: DOCX→PDF **398,366 B / 9 pages**; internal 21,704 B / 9 pages                                                    |
+| `node tools/measure-ribbon.mjs`                                          | ribbon height 50.31 px on all 7 tabs at 805 px viewport (= 1/16)                                                                                |
+| `node tools/probe-panel.mjs`                                             | File backstage opens without changing height; folder open → title, workspace and chat session prepared                                          |
+| `node tools/check-integrations.mjs`                                      | OK — Claude plugin (12 skills, 3 commands), Codex, Antigravity, OpenCode                                                                        |
+| DSH install (Plugins → Add plugin, GitHub link)                          | `application: applied`; 26 `document_*` tools + Documents panel                                                                                 |
+| DSH Documents API (`/api/dsh-documents`)                                 | bootstrap/op/ops/save/search, plus browse/workspace/open-path                                                                                   |
+| `node apps/cli/dist/main.js verify <fixture>`                            | 6/6 checks pass (9 pages, 21,704-byte PDF)                                                                                                      |
+| `node apps/cli/dist/main.js roundtrip <fixture>`                         | text identical, 310→310 paragraphs, 3→3 sections                                                                                                |
+| stdio MCP smoke (real `apps/mcp/dist/main.js` via SDK client)            | 50 tools listed, create/read/resource/prompt all OK                                                                                             |
+| web server smoke (`:4317`)                                               | health, create, list, export PDF/HTML, render PDF/HTML all 200                                                                                  |
 
 ## The fixture family
 
